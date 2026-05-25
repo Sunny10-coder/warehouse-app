@@ -122,40 +122,64 @@ export default function Attendance() {
                 </Text>
                 {todayMarked.clock_in && (
                   <Text style={styles.markedDetail}>
-                    {todayMarked.clock_in} – {todayMarked.clock_out} · {todayMarked.hours_worked}h
+                    {todayMarked.clock_in} – {todayMarked.clock_out || "..."} · {todayMarked.hours_worked}h
                   </Text>
                 )}
               </View>
+              {todayMarked.clock_in && !todayMarked.clock_out && (
+                <TouchableOpacity
+                  testID="attendance-clock-out-now"
+                  style={styles.clockOutNowBtn}
+                  onPress={clockOutNow}
+                  disabled={submitting}
+                >
+                  <Ionicons name="exit" size={16} color={colors.bg} />
+                  <Text style={styles.clockOutNowText}>CLOCK OUT</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                testID="attendance-mark-present"
-                style={[styles.actionBtn, { backgroundColor: colors.success }]}
-                onPress={() => quickMark("present")}
-                disabled={submitting}
-              >
-                <Ionicons name="checkmark" size={18} color={colors.bg} />
-                <Text style={styles.actionBtnText}>PRESENT</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="attendance-mark-late"
-                style={[styles.actionBtn, { backgroundColor: colors.warning }]}
-                onPress={() => quickMark("late")}
-                disabled={submitting}
-              >
-                <Ionicons name="time" size={18} color={colors.bg} />
-                <Text style={styles.actionBtnText}>LATE</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="attendance-clock-in-out"
-                style={[styles.actionBtn, { backgroundColor: colors.textPrimary }]}
-                onPress={() => setShowModal(true)}
-              >
-                <Ionicons name="hourglass" size={16} color={colors.bg} />
-                <Text style={styles.actionBtnText}>CLOCK</Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  testID="attendance-clock-in-now"
+                  style={[styles.actionBtn, { backgroundColor: colors.morning }]}
+                  onPress={clockInNow}
+                  disabled={submitting}
+                >
+                  <Ionicons name="enter" size={18} color={colors.bg} />
+                  <Text style={styles.actionBtnText}>CLOCK IN NOW</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  testID="attendance-mark-present"
+                  style={[styles.actionBtn, { backgroundColor: colors.success }]}
+                  onPress={() => quickMark("present")}
+                  disabled={submitting}
+                >
+                  <Ionicons name="checkmark" size={18} color={colors.bg} />
+                  <Text style={styles.actionBtnText}>PRESENT</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="attendance-mark-late"
+                  style={[styles.actionBtn, { backgroundColor: colors.warning }]}
+                  onPress={() => quickMark("late")}
+                  disabled={submitting}
+                >
+                  <Ionicons name="time" size={18} color={colors.bg} />
+                  <Text style={styles.actionBtnText}>LATE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="attendance-clock-in-out"
+                  style={[styles.actionBtn, { backgroundColor: colors.textPrimary }]}
+                  onPress={() => setShowModal(true)}
+                >
+                  <Ionicons name="hourglass" size={16} color={colors.bg} />
+                  <Text style={styles.actionBtnText}>MANUAL</Text>
+                </TouchableOpacity>
+              </View>
+            </>
           )}
         </View>
 
@@ -280,6 +304,11 @@ const styles = StyleSheet.create({
   markedStatus: { color: colors.textSecondary, fontSize: 13 },
   markedStatusBold: { color: colors.success, fontWeight: "800" },
   markedDetail: { color: colors.textPrimary, fontSize: 13, marginTop: 2 },
+  clockOutNowBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 4,
+  },
+  clockOutNowText: { color: colors.bg, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   statsRow: { flexDirection: "row", gap: 10 },
   statBox: {
     flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,

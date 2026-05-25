@@ -279,9 +279,13 @@ function Empty({ icon, text }: any) {
 }
 
 function UserEditModal({ user, onClose, onSaved }: any) {
+  const [fullName, setFullName] = useState(user?.full_name || "");
   const [shift, setShift] = useState(user?.default_shift || "morning");
   const [team, setTeam] = useState(user?.team || "");
   const [location, setLocation] = useState(user?.location || "warehouse");
+  const [annual, setAnnual] = useState(String(user?.annual_leave_balance ?? 30));
+  const [sick, setSick] = useState(String(user?.sick_leave_balance ?? 12));
+  const [compOff, setCompOff] = useState(String(user?.comp_off_balance ?? 0));
   const [saving, setSaving] = useState(false);
 
   if (!user) return null;
@@ -290,9 +294,13 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     setSaving(true);
     try {
       await api.patch(`/users/${user.id}`, {
+        full_name: fullName,
         default_shift: shift,
         team: team || null,
         location,
+        annual_leave_balance: parseFloat(annual) || 0,
+        sick_leave_balance: parseFloat(sick) || 0,
+        comp_off_balance: parseFloat(compOff) || 0,
       });
       onSaved();
     } catch (e) {
@@ -302,16 +310,33 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     }
   };
 
+  const adjustBalance = (which: "annual" | "sick" | "comp_off", delta: number) => {
+    const current = which === "annual" ? annual : which === "sick" ? sick : compOff;
+    const setter = which === "annual" ? setAnnual : which === "sick" ? setSick : setCompOff;
+    const next = Math.max(0, (parseFloat(current) || 0) + delta);
+    setter(String(next));
+  };
+
   return (
     <Modal visible={!!user} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBg}>
-        <View style={styles.modalBox}>
+        <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{user.full_name}</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
+
+          <Text style={styles.modalLabel}>Full Name</Text>
+          <TextInput
+            testID="edit-fullname"
+            value={fullName}
+            onChangeText={setFullName}
+            style={styles.modalInput}
+            placeholder="Employee name"
+            placeholderTextColor={colors.textMuted}
+          />
 
           <Text style={styles.modalLabel}>Default Shift</Text>
           <View style={styles.optGrid}>
@@ -361,6 +386,11 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             ))}
           </View>
 
+          <Text style={styles.modalLabel}>Leave Balances</Text>
+          <BalanceEditor testID="balance-annual" label="Annual" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d) => adjustBalance("annual", d)} />
+          <BalanceEditor testID="balance-sick" label="Sick" color={colors.sick} value={sick} setValue={setSick} onAdjust={(d) => adjustBalance("sick", d)} />
+          <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d) => adjustBalance("comp_off", d)} />
+
           <TouchableOpacity
             testID="user-save"
             style={[styles.submitBtn, saving && { opacity: 0.6 }]}
@@ -370,9 +400,33 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             {saving ? <ActivityIndicator color={colors.bg} /> :
               <Text style={styles.submitBtnText}>SAVE CHANGES</Text>}
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+function BalanceEditor({ label, color, value, setValue, onAdjust, testID }: any) {
+  return (
+    <View style={[styles.balanceEditor, { borderColor: color }]} testID={testID}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.balanceEditorLabel, { color }]}>{label}</Text>
+        <TextInput
+          value={value}
+          onChangeText={setValue}
+          keyboardType="numeric"
+          style={styles.balanceEditorInput}
+        />
+      </View>
+      <View style={styles.balanceEditorActions}>
+        <TouchableOpacity testID={`${testID}-minus`} style={styles.balanceBtn} onPress={() => onAdjust(-1)}>
+          <Ionicons name="remove" size={18} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <TouchableOpacity testID={`${testID}-plus`} style={styles.balanceBtn} onPress={() => onAdjust(1)}>
+          <Ionicons name="add" size={18} color={colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -450,4 +504,17 @@ const styles = StyleSheet.create({
   },
   optChipActive: { backgroundColor: colors.morning, borderColor: colors.morning },
   optChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  balanceEditor: {
+    flexDirection: "row", alignItems: "center", padding: 12, marginBottom: 8,
+    borderWidth: 1, borderRadius: 4, backgroundColor: colors.surfaceHi,
+  },
+  balanceEditorLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  balanceEditorInput: {
+    color: colors.textPrimary, fontSize: 20, fontWeight: "800", padding: 0, marginTop: 2,
+  },
+  balanceEditorActions: { flexDirection: "row", gap: 6 },
+  balanceBtn: {
+    width: 36, height: 36, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    alignItems: "center", justifyContent: "center", backgroundColor: colors.surface,
+  },
 });

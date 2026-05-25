@@ -667,25 +667,31 @@ async def mark_attendance(
         raise HTTPException(status_code=404, detail="User not found")
 
     sched = await db.schedules.find_one({"user_id": target_id, "shift_date": payload.attendance_date})
+    existing = await db.attendance.find_one({"user_id": target_id, "attendance_date": payload.attendance_date}) or {}
+
+    # Partial merge so clock-in and clock-out can be submitted independently
+    clock_in = payload.clock_in if payload.clock_in is not None else existing.get("clock_in")
+    clock_out = payload.clock_out if payload.clock_out is not None else existing.get("clock_out")
+
     hours = payload.hours_worked
     if hours is None:
-        if payload.clock_in and payload.clock_out:
-            hours = _compute_hours(payload.clock_in, payload.clock_out)
-        elif sched and payload.status == "present":
+        if clock_in and clock_out:
+            hours = _compute_hours(clock_in, clock_out)
+        elif sched and payload.status == "present" and not clock_in:
             hours = sched.get("hours", 0)
         else:
-            hours = 0
+            hours = existing.get("hours_worked", 0)
 
     record = AttendanceMark(
         user_id=target_id,
         user_name=target["full_name"],
         attendance_date=payload.attendance_date,
         status=payload.status,
-        clock_in=payload.clock_in,
-        clock_out=payload.clock_out,
+        clock_in=clock_in,
+        clock_out=clock_out,
         hours_worked=hours,
         shift_type=(sched or {}).get("shift_type"),
-        notes=payload.notes,
+        notes=payload.notes if payload.notes is not None else existing.get("notes"),
         marked_by=user["_id"],
     )
     await db.attendance.update_one(
@@ -694,6 +700,30 @@ async def mark_attendance(
         upsert=True,
     )
     return record
+
+
+@app.post("/api/attendance/clock-in", response_model=AttendanceMark)
+async def clock_in_now(user: dict = Depends(get_current_user), db=Depends(get_db)):
+    """Record current time as clock-in for today."""
+    now_str = datetime.now().strftime("%H:%M")
+    payload = AttendanceCreate(
+        attendance_date=date.today().isoformat(),
+        status="present",
+        clock_in=now_str,
+    )
+    return await mark_attendance(payload, user, db)
+
+
+@app.post("/api/attendance/clock-out", response_model=AttendanceMark)
+async def clock_out_now(user: dict = Depends(get_current_user), db=Depends(get_db)):
+    """Record current time as clock-out for today (hours auto-computed)."""
+    now_str = datetime.now().strftime("%H:%M")
+    payload = AttendanceCreate(
+        attendance_date=date.today().isoformat(),
+        status="present",
+        clock_out=now_str,
+    )
+    return await mark_attendance(payload, user, db)
 
 
 @app.get("/api/attendance", response_model=list[AttendanceMark])
@@ -951,3 +981,91 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+@app.get("/api/reports/employee/{user_id}")
+async def employee_report(
+    user_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Aggregated per-employee report. Defaults to current month if no range given."""
+    if user["role"] not in ADMIN_ROLES and user_id != user["_id"]:
+        raise HTTPException(status_code=403, detail="Cannot view others")
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    today = date.today()
+    if not start_date:
+        start_date = today.replace(day=1).isoformat()
+    if not end_date:
+        end_date = today.isoformat()
+
+    # Attendance
+    att_docs = await db.attendance.find(
+        {"user_id": user_id, "attendance_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0},
+    ).sort("attendance_date", 1).to_list(500)
+    total_hours = round(sum(a.get("hours_worked", 0) for a in att_docs), 2)
+    present_days = sum(1 for a in att_docs if a["status"] == "present")
+    late_days = sum(1 for a in att_docs if a["status"] == "late")
+    absent_days = sum(1 for a in att_docs if a["status"] == "absent")
+    half_days = sum(1 for a in att_docs if a["status"] == "half_day")
+
+    # Scheduled vs marked
+    sched_docs = await db.schedules.find(
+        {"user_id": user_id, "shift_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0},
+    ).to_list(500)
+    scheduled_work_days = sum(1 for s in sched_docs if s["shift_type"] not in ("off", "leave"))
+    scheduled_hours = round(sum(s.get("hours", 0) for s in sched_docs), 2)
+
+    # Leaves
+    leave_docs = await db.leaves.find(
+        {"user_id": user_id, "start_date": {"$lte": end_date}, "end_date": {"$gte": start_date}},
+        {"_id": 0},
+    ).to_list(200)
+    leave_summary = {
+        "annual": {"taken": 0, "pending": 0},
+        "sick": {"taken": 0, "pending": 0},
+        "comp_off": {"taken": 0, "pending": 0},
+        "emergency": {"taken": 0, "pending": 0},
+    }
+    for lv in leave_docs:
+        t = lv["leave_type"]
+        if t not in leave_summary:
+            continue
+        if lv["status"] == "approved":
+            leave_summary[t]["taken"] += lv["days"]
+        elif lv["status"] == "pending":
+            leave_summary[t]["pending"] += lv["days"]
+
+    return {
+        "user": _user_public(target).dict(),
+        "range": {"start_date": start_date, "end_date": end_date},
+        "attendance": {
+            "total_hours": total_hours,
+            "present_days": present_days,
+            "late_days": late_days,
+            "absent_days": absent_days,
+            "half_days": half_days,
+            "scheduled_work_days": scheduled_work_days,
+            "scheduled_hours": scheduled_hours,
+            "records": att_docs,
+        },
+        "leaves": {
+            "summary": leave_summary,
+            "balances": {
+                "annual": target.get("annual_leave_balance", 0),
+                "sick": target.get("sick_leave_balance", 0),
+                "comp_off": target.get("comp_off_balance", 0),
+            },
+            "records": leave_docs,
+        },
+    }

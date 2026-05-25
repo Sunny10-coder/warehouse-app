@@ -128,6 +128,16 @@ export default function Dashboard() {
           />
         </View>
 
+        <TouchableOpacity
+          testID="dashboard-view-report"
+          style={styles.reportBtn}
+          onPress={() => router.push("/(app)/reports")}
+        >
+          <Ionicons name="bar-chart" size={18} color={colors.morning} />
+          <Text style={styles.reportBtnText}>VIEW MY FULL REPORT</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.morning} />
+        </TouchableOpacity>
+
         {/* Leave balances */}
         <Text style={styles.overline}>LEAVE BALANCES</Text>
         <View style={styles.statsGrid}>
@@ -263,6 +273,12 @@ const styles = StyleSheet.create({
   },
   statValue: { color: colors.textPrimary, fontSize: 26, fontWeight: "800" },
   statLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "500" },
+  reportBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: colors.morningBg, borderColor: colors.morning, borderWidth: 1,
+    height: 48, borderRadius: 4, marginTop: 12,
+  },
+  reportBtnText: { color: colors.morning, fontWeight: "800", letterSpacing: 1.5, fontSize: 12 },
   adminGrid: { flexDirection: "row", gap: 12 },
   adminTile: {
     flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,

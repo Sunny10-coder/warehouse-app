@@ -4,7 +4,7 @@ import {
   RefreshControl, FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -250,6 +250,11 @@ const styles = StyleSheet.create({
   dayNum: { color: colors.textPrimary, fontSize: 20, fontWeight: "800", marginTop: 4 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.morning, marginTop: 4 },
   dayTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: "700", marginBottom: 10 },
+  editDayBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: colors.morning, height: 40, borderRadius: 4, marginBottom: 12,
+  },
+  editDayText: { color: colors.bg, fontWeight: "800", letterSpacing: 1, fontSize: 12 },
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   summaryChip: { paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderRadius: 2 },
   summaryChipText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
@@ -263,4 +268,9 @@ const styles = StyleSheet.create({
   entryIcon: { width: 44, height: 44, borderRadius: 4, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   empty: { alignItems: "center", padding: 40, gap: 12 },
   emptyText: { color: colors.textMuted, fontSize: 13, textAlign: "center" },
+  editDayBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: colors.morning, height: 40, borderRadius: 4, marginBottom: 12,
+  },
+  editDayText: { color: colors.bg, fontWeight: "800", letterSpacing: 1, fontSize: 12 },
 });

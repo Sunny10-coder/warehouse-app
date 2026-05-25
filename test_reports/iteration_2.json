@@ -1,0 +1,57 @@
+{
+  "summary": "Backend regression + new feature testing for iteration 2. All 38 pytest tests passed (100%). Added 12 new tests covering: POST /api/attendance/clock-in (records HH:MM clock_in for today, status=present), POST /api/attendance/clock-out (preserves existing clock_in, computes hours_worked > 0), partial merge of /api/attendance (sending only clock_in does NOT erase clock_out and vice versa, hours auto-recompute), GET /api/reports/employee/{self_id} (employee can read own), 403 for other employee, 200 for admin with start_date/end_date echo, 404 for unknown user, response shape includes attendance.{total_hours, present_days, late_days, absent_days, half_days, scheduled_work_days, scheduled_hours, records} + leaves.summary.{annual,sick,comp_off,emergency}.{taken,pending} + leaves.balances.{annual,sick,comp_off}, PATCH /api/users/{id} as admin updates full_name and annual_leave_balance/sick_leave_balance/comp_off_balance with values reflected in GET, employee 403 on PATCH. All 26 prior regression tests still pass (health, auth, register->approval, list/patch users, schedule generate Monday-only + employee 403 + 168+ entries, attendance self mark + own-only view, leaves emergency-bypass + annual coverage-block + approve-updates-schedule + reject + employee 403, dashboard admin block).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "passlib bcrypt warning",
+        "issue": "Backend logs still show 'AttributeError: module bcrypt has no attribute __about__' at first login. Non-blocking (passlib falls back) but noisy. Pin bcrypt<4 or upgrade passlib."
+      },
+      {
+        "endpoint": "POST /api/attendance/clock-in & /clock-out",
+        "issue": "Uses datetime.now() (server local time) without timezone awareness for the recorded HH:MM. If server tz differs from user's expected tz, the clock value may surprise users. Consider using a configurable APP_TIMEZONE or accepting client-provided timestamp."
+      },
+      {
+        "endpoint": "POST /api/attendance/clock-out",
+        "issue": "If user calls clock-out before any clock-in for today, clock_in is None so hours_worked = existing.get('hours_worked', 0) which is 0. No 400/explicit error — silently records clock_out only. Consider returning 400 'no clock_in for today' to prevent partial records."
+      },
+      {
+        "endpoint": "GET /api/reports/employee/{user_id}",
+        "issue": "leaves.records includes leaves whose start_date <= end_date AND end_date >= start_date (overlap). The 'taken/pending' counters add lv['days'] which is the FULL duration of the leave even if only part overlaps the report range. Minor reporting quirk."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_warehouse_backend.py",
+    "/app/backend/tests/test_iteration2_features.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Pin bcrypt<4 in requirements.txt to silence passlib version warning.",
+    "(Optional) Make clock-in/clock-out timezone-aware via APP_TIMEZONE env var or accept client-supplied 'now'.",
+    "(Optional) Have /api/attendance/clock-out return 400 when there is no prior clock_in for today rather than silently storing partial record."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to ~1070 lines. Should be modularized (routers: auth, users, schedule, attendance, leaves, reports, dashboard) before adding more endpoints.",
+    "PATCH /api/users update payload uses payload.dict(exclude_unset=True) but then filters v is not None — this prevents explicit setting of nullable fields (e.g. team=null cannot be applied). Acceptable for v1 but worth noting.",
+    "employee_report leave-day counting uses lv['days'] = full leave duration even when only part of the leave window falls inside the report range. Consider clamping to the overlap.",
+    "clock-in / clock-out use datetime.now() (naive local). Use timezone.utc + configured tz for consistency.",
+    "Coverage check still ignores 12hr Saturday/Sunday shifts (sat_day/sat_night/sun_*) — consistent with v1 spec but should be documented."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2_features.py (created — 12 new tests)"
+  ],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Created today's attendance record for midhun (clock_in 07:00 + clock_out via /clock-out endpoint). Added attendance for midhun on 2026-07-06 (08:30/18:00). Briefly mutated then restored full_name/balances of staff_b2 and staff_b4. Registered one new TEST_<uuid> user and approved it (same pattern as iteration 1).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 38 backend tests are green. Schedules for 2026-06-01 to 2026-06-14 are seeded. staff_a1 has an approved emergency leave on 2026-06-03 (cumulative across iterations). midhun has attendance entries on today's date and 2026-07-06. Use Manager: manager@warehouse.com/Manager@123 and Staff: midhun@warehouse.com or staff_a1@warehouse.com / Staff@123. Frontend env key is EXPO_PUBLIC_BACKEND_URL.",
+  "rca_of_issue": "N/A — no failures."
+}
