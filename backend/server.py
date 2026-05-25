@@ -20,6 +20,7 @@ from typing import Annotated, Any, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -981,6 +982,35 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/admin/source-zip")
+async def download_source_zip(token: Optional[str] = None, admin_user: Optional[dict] = None, db=Depends(get_db)):
+    """Download the complete project source as a zip file.
+
+    Accepts either:
+    - A standard Bearer token in Authorization header (via Depends), OR
+    - A `token` query param (so the link can be opened directly in a browser).
+    Admin role required.
+    """
+    user = None
+    if token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            uid = payload.get("sub")
+            user = await db.users.find_one({"_id": uid}) if uid else None
+        except JWTError:
+            user = None
+    if not user or user.get("role") not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin token required (?token=...)")
+    zip_path = ROOT_DIR / "downloads" / "warehouse-app.zip"
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="Source zip not built yet")
+    return FileResponse(
+        path=str(zip_path),
+        filename="warehouse-app.zip",
+        media_type="application/zip",
+    )
 
 
 # ---------------------------------------------------------------------------

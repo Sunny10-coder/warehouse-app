@@ -60,6 +60,30 @@ export default function Attendance() {
     }
   };
 
+  const clockInNow = async () => {
+    setSubmitting(true);
+    try {
+      await api.post("/attendance/clock-in");
+      await load();
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const clockOutNow = async () => {
+    setSubmitting(true);
+    try {
+      await api.post("/attendance/clock-out");
+      await load();
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submitClockInOut = async () => {
     if (!clockIn || !clockOut) {
       setError("Enter both clock in and clock out time (HH:MM)");
