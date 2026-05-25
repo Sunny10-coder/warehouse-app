@@ -759,11 +759,17 @@ def _date_range(start: str, end: str) -> list[str]:
 
 
 async def _check_coverage(db, dates: list[str], excluding_user: str) -> dict:
-    """Return per-date warehouse coverage status (excluding admins/EGA)."""
+    """Return per-date warehouse coverage status (excluding admins/EGA).
+
+    If no schedule has been generated for a given date yet, that date is treated
+    as 'ok' (cannot block leave on dates with no roster).
+    """
     coverage = {}
     for d in dates:
         schedules = await db.schedules.find({"shift_date": d}).to_list(200)
-        # active leaves overlapping this date
+        if not schedules:
+            coverage[d] = {"morning": 0, "afternoon": 0, "night": 0, "ok": True, "no_schedule": True}
+            continue
         leaves = await db.leaves.find({
             "status": "approved",
             "start_date": {"$lte": d},
@@ -774,7 +780,7 @@ async def _check_coverage(db, dates: list[str], excluding_user: str) -> dict:
         counts = {"morning": 0, "afternoon": 0, "night": 0}
         for s in schedules:
             if s["user_id"] == excluding_user:
-                continue  # simulating removal
+                continue
             if s["user_id"] in on_leave_ids:
                 continue
             if s["shift_type"] in counts:
