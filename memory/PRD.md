@@ -44,6 +44,13 @@ A React Native Expo mobile app (with web preview) for a 14-person warehouse team
 ## Smart Enhancement
 **Built-in coverage intelligence**: The leave application form auto-rejects requests that would drop coverage below the 3-morning/2-afternoon/2-night minimum, forcing employees to use Emergency Leave instead — protecting business continuity automatically without manager intervention. This catches scheduling conflicts before they become operational crises.
 
+## Iteration 2 — Enhanced Admin Tools
+1. **Admin User Edit Modal**: full_name editor, default_shift, team, location, AND direct leave-balance editors (annual/sick/comp_off) with ± buttons. Replaces all 9 staff placeholder names with real employees by tapping any user in Admin → STAFF.
+2. **Calendar-based Schedule Day Editor** (`/(app)/schedule-edit`): Admin taps "EDIT THIS DAY" on the schedule screen → grouped view by shift type (Morning 3-min, Afternoon 2-min, Night 2-min, Admin, EGA, Saturday Day/Night, Sunday Day/Night) with red-warning when below minimum. Add any active employee to any shift, remove with one tap, reassign via long-press picker. Supports 3+1+1 flexibility.
+3. **Clock In/Out Now buttons**: Quick `POST /api/attendance/clock-in` and `/clock-out` record current time, auto-compute hours, partial merge (each can be submitted independently).
+4. **Reports Screen** (`/(app)/reports`): Employee sees their own, admin can pick any. Monthly hours, present/late/absent/half/scheduled days, leave breakdown by type (taken / pending / remaining), attendance log. Month navigator allows historical viewing.
+5. **Backfill support**: Admin can mark attendance and edit schedule for any past date via the schedule-edit screen and attendance manual entry.
+
 ## Deployment Notes
 - Free hosting on Emergent preview; user can `Save to GitHub` then deploy backend to Railway/Render and frontend to Vercel (all free tiers).
 - iOS/Android builds via Emergent publish button.
