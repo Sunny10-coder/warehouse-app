@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 3 backend regression + new GET /api/calendar/month endpoint. Added 13 new tests in /app/backend/tests/test_iteration3_calendar.py. Total: 51/51 pytest tests pass (100%) against the public EXPO_PUBLIC_BACKEND_URL. New tests cover: 200 response shape (range/minimum_coverage/days[30]/summary), per-day fields (date, weekday 0=Mon, shifts dict, leaves[], coverage{morning,afternoon,night}, status in ok|warn|critical), employee + warehouse-staff role access, unauthenticated 401/403, invalid month (0 and 13) -> 400, far-future empty month (2030-03) has zero coverage on every day + every Mon-Fri marked 'critical' + summary.critical_days matches weekday count, summary critical_days matches per-day status count, approved leave on an existing morning-scheduled user reduces coverage[morning] by exactly 1 and leave appears in that day's leaves[] with status='approved'. Live response on 2026-06: 30 days, summary={total_active_staff:16, total_scheduled_entries:224, total_scheduled_hours:1626.0, approved_leaves:5, pending_leaves:1, critical_days:12, warn_days:10}. All 38 prior tests (iteration 1 + iteration 2) still pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/calendar/month",
+        "issue": "summary.warn_days only counts WEEKDAY warn days. Weekends that the endpoint flags status='warn' (no coverage + no leaves) are stored on the day but NOT counted in summary.warn_days. Fix: increment monthly_warn in the weekend branch too (server.py around line 1108)."
+      },
+      {
+        "endpoint": "GET /api/calendar/month",
+        "issue": "Leaves[] per-day can contain duplicate entries for the same (user_id, leave_type, status) when multiple approved leave records exist for the same user on the same date (observed 4 duplicates for Staff A1 on 2026-06-03 from accumulated test seed data). Consider de-duplicating by leave_id when bucketing, or surfacing leave_id in the day's leaves[] so frontend can de-dup."
+      },
+      {
+        "endpoint": "GET /api/calendar/month",
+        "issue": "minimum_coverage is hard-coded to {morning:3, afternoon:2, night:2} but warehouse only — EGA staff get bucketed into shifts['ega'] and don't count toward coverage. Behaviour is correct but undocumented in the response (no 'scope' field). Minor."
+      },
+      {
+        "endpoint": "GET /api/calendar/month",
+        "issue": "Coverage-reduction loop deducts 1 per approved leave doc that overlaps. After /api/leaves/{id}/action moves the schedule entry to shift_type='leave', this works fine. But if an admin ever directly inserts an approved leave without invoking /action (no schedule mutation) AND there are MULTIPLE approved leave docs for the same user/date, coverage would be over-decremented. Edge case — only triggers via raw DB writes."
+      },
+      {
+        "endpoint": "backend bcrypt warning",
+        "issue": "Still emits 'AttributeError: module bcrypt has no attribute __about__' at first login (passlib compatibility). Non-blocking. Pin bcrypt<4 or upgrade passlib."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_warehouse_backend.py",
+    "/app/backend/tests/test_iteration2_features.py",
+    "/app/backend/tests/test_iteration3_calendar.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix summary.warn_days to also include weekend days that were flagged status='warn' (server.py weekend branch ~line 1108 — increment monthly_warn there as well).",
+    "De-duplicate per-day leaves[] entries (e.g. by leave_id) so the frontend doesn't render the same leave multiple times when historical/test duplicates exist for a (user,date) pair.",
+    "(Optional) Pin bcrypt<4 in requirements.txt to silence passlib warning.",
+    "(Optional) server.py is now ~1245 lines — split into routers (auth, users, schedule, attendance, leaves, reports, dashboard, calendar) before adding more features."
+  ],
+  "critical_code_review_comments": [
+    "Coverage deduction loop in calendar_month iterates per-leave-doc; relies on the side-effect that approved leaves remove the user from the morning/afternoon/night shift bucket via /leaves/{id}/action. Document this contract or compute coverage from a unique (user_id, shift_type) set to be defensive.",
+    "monthly_warn is only incremented in the weekday branch — inconsistent with status assignment which can set 'warn' on weekends.",
+    "leaves bucketing does not carry leave_id forward to the per-day leaves[] payload — frontend cannot uniquely identify/dedup entries.",
+    "Magic constants in COVERAGE_MIN at module scope — fine for v1, move to settings/env when warehouse expansion happens."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_calendar.py (created — 13 new tests)"
+  ],
+  "success_rate": {"backend": "100% (51/51)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "test_approved_leave_reduces_coverage creates one new approved emergency leave for the user scheduled to the first morning slot of June 2026 (typically Staff A1 on 2026-06-01 or 2026-06-03 depending on prior seed state). Added a 4th duplicate emergency-leave doc for Staff A1 on 2026-06-03 (now 4 duplicates total across iterations). No other data mutations.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 51 backend tests green against https://warehouse-crew.preview.emergentagent.com (EXPO_PUBLIC_BACKEND_URL). New endpoint GET /api/calendar/month is fully covered. Known minor backend issues: summary.warn_days undercounts weekend warns; per-day leaves[] can have duplicate entries when multiple approved leave docs exist for the same (user,date) — driven by accumulated test seeds, mostly visible for Staff A1 on 2026-06-03. Frontend not tested (request was backend-only). Use the same credentials: manager@warehouse.com / Manager@123 and staff_a1@warehouse.com or midhun@warehouse.com / Staff@123.",
+  "rca_of_issue": "N/A — all assertions pass. Two minor inconsistencies in calendar_month flagged in backend_issues.minor with concrete line/branch fixes."
+}

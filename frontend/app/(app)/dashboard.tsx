@@ -138,6 +138,16 @@ export default function Dashboard() {
           <Ionicons name="chevron-forward" size={16} color={colors.morning} />
         </TouchableOpacity>
 
+        <TouchableOpacity
+          testID="dashboard-command-center"
+          style={styles.commandBtn}
+          onPress={() => router.push("/(app)/command-center")}
+        >
+          <Ionicons name="grid" size={18} color={colors.bg} />
+          <Text style={styles.commandBtnText}>OPEN COMMAND CENTER</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.bg} />
+        </TouchableOpacity>
+
         {/* Leave balances */}
         <Text style={styles.overline}>LEAVE BALANCES</Text>
         <View style={styles.statsGrid}>
@@ -279,6 +289,11 @@ const styles = StyleSheet.create({
     height: 48, borderRadius: 4, marginTop: 12,
   },
   reportBtnText: { color: colors.morning, fontWeight: "800", letterSpacing: 1.5, fontSize: 12 },
+  commandBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: colors.textPrimary, height: 48, borderRadius: 4, marginTop: 8,
+  },
+  commandBtnText: { color: colors.bg, fontWeight: "800", letterSpacing: 1.5, fontSize: 12 },
   adminGrid: { flexDirection: "row", gap: 12 },
   adminTile: {
     flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,

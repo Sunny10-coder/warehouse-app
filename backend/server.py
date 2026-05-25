@@ -984,6 +984,150 @@ async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+# ---------------------------------------------------------------------------
+# Calendar / Command Center
+# ---------------------------------------------------------------------------
+COVERAGE_MIN = {"morning": 3, "afternoon": 2, "night": 2}
+
+
+@app.get("/api/calendar/month")
+async def calendar_month(
+    year: int,
+    month: int,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Aggregated monthly command-center view for ALL users.
+
+    Returns per-day:
+      - list of schedule entries grouped by shift_type
+      - approved + pending leaves that touch this day
+      - coverage counts vs minimum (morning≥3, afternoon≥2, night≥2)
+      - status: ok | warn | critical (critical = below_min)
+
+    Plus a monthly comparison summary.
+    """
+    if month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    start = date(year, month, 1)
+    end = date(year + (1 if month == 12 else 0), 1 if month == 12 else month + 1, 1) - timedelta(days=1)
+    start_str, end_str = start.isoformat(), end.isoformat()
+
+    schedules = await db.schedules.find(
+        {"shift_date": {"$gte": start_str, "$lte": end_str}}, {"_id": 0}
+    ).sort("shift_date", 1).to_list(5000)
+    leaves = await db.leaves.find({
+        "$and": [
+            {"start_date": {"$lte": end_str}},
+            {"end_date": {"$gte": start_str}},
+            {"status": {"$in": ["approved", "pending"]}},
+        ]
+    }, {"_id": 0}).to_list(500)
+
+    days: dict[str, dict] = {}
+    cursor = start
+    while cursor <= end:
+        d = cursor.isoformat()
+        days[d] = {
+            "date": d,
+            "weekday": cursor.weekday(),  # 0=Mon
+            "shifts": {k: [] for k in ["morning", "afternoon", "night", "admin", "ega",
+                                       "sat_day", "sat_night", "sun_day", "sun_night", "off", "leave"]},
+            "leaves": [],
+            "coverage": {"morning": 0, "afternoon": 0, "night": 0},
+            "status": "ok",
+        }
+        cursor += timedelta(days=1)
+
+    # Bucket schedules by date+shift
+    for s in schedules:
+        d = s["shift_date"]
+        if d not in days:
+            continue
+        st = s.get("shift_type", "off")
+        days[d]["shifts"].setdefault(st, []).append({
+            "user_id": s["user_id"],
+            "user_name": s["user_name"],
+            "start_time": s.get("start_time", ""),
+            "end_time": s.get("end_time", ""),
+        })
+        if st in days[d]["coverage"]:
+            days[d]["coverage"][st] += 1
+
+    # Bucket leaves into the dates they overlap
+    for lv in leaves:
+        ls = max(start, datetime.strptime(lv["start_date"], "%Y-%m-%d").date())
+        le = min(end, datetime.strptime(lv["end_date"], "%Y-%m-%d").date())
+        cur = ls
+        while cur <= le:
+            d = cur.isoformat()
+            if d in days:
+                days[d]["leaves"].append({
+                    "user_id": lv["user_id"],
+                    "user_name": lv["user_name"],
+                    "leave_type": lv["leave_type"],
+                    "status": lv["status"],
+                })
+                # Approved leaves reduce coverage
+                if lv["status"] == "approved":
+                    for sk in days[d]["coverage"].keys():
+                        # Remove from coverage if user was scheduled to that shift
+                        for entry in days[d]["shifts"].get(sk, []):
+                            if entry["user_id"] == lv["user_id"]:
+                                days[d]["coverage"][sk] = max(0, days[d]["coverage"][sk] - 1)
+            cur += timedelta(days=1)
+
+    # Compute status per day (only count weekdays mon-fri for strict critical)
+    monthly_critical = 0
+    monthly_warn = 0
+    total_scheduled_hours = 0.0
+    for s in schedules:
+        total_scheduled_hours += s.get("hours", 0)
+
+    for d, info in days.items():
+        cov = info["coverage"]
+        is_weekday = info["weekday"] <= 4
+        if is_weekday:
+            below = (
+                cov["morning"] < COVERAGE_MIN["morning"]
+                or cov["afternoon"] < COVERAGE_MIN["afternoon"]
+                or cov["night"] < COVERAGE_MIN["night"]
+            )
+            if below:
+                info["status"] = "critical"
+                monthly_critical += 1
+            elif (cov["morning"] == COVERAGE_MIN["morning"]
+                  or cov["afternoon"] == COVERAGE_MIN["afternoon"]
+                  or cov["night"] == COVERAGE_MIN["night"]):
+                info["status"] = "warn"
+                monthly_warn += 1
+        else:
+            # weekends: only flag if there's literally no coverage
+            total_weekend = sum(cov.values())
+            if total_weekend == 0 and not info["leaves"]:
+                info["status"] = "warn"
+
+    # Comparison summary
+    active_users_count = await db.users.count_documents({"status": "active"})
+    approved_leaves_total = sum(1 for lv in leaves if lv["status"] == "approved")
+    pending_leaves_total = sum(1 for lv in leaves if lv["status"] == "pending")
+
+    return {
+        "range": {"start_date": start_str, "end_date": end_str, "year": year, "month": month},
+        "minimum_coverage": COVERAGE_MIN,
+        "days": list(days.values()),
+        "summary": {
+            "total_active_staff": active_users_count,
+            "total_scheduled_entries": len(schedules),
+            "total_scheduled_hours": round(total_scheduled_hours, 2),
+            "approved_leaves": approved_leaves_total,
+            "pending_leaves": pending_leaves_total,
+            "critical_days": monthly_critical,
+            "warn_days": monthly_warn,
+        },
+    }
+
+
 @app.get("/api/admin/source-zip")
 async def download_source_zip(token: Optional[str] = None, admin_user: Optional[dict] = None, db=Depends(get_db)):
     """Download the complete project source as a zip file.

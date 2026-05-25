@@ -79,6 +79,7 @@ export default function AppLayout() {
       />
       <Tabs.Screen name="schedule-edit" options={{ href: null }} />
       <Tabs.Screen name="reports" options={{ href: null }} />
+      <Tabs.Screen name="command-center" options={{ href: null }} />
     </Tabs>
   );
 }
