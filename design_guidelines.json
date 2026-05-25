@@ -1,0 +1,139 @@
+{
+  "project_context": {
+    "domain": "Warehouse Workforce Management",
+    "target_audience": "Warehouse Employees, Managers, Document Controllers",
+    "theme": "Dark",
+    "archetype": "Archetype 2 (The Performance Pro / Tactical Minimalist)",
+    "design_ethos": "Command-center focus, mission-linked cards, high legibility in low light, dual-format indicators (icon + number)."
+  },
+  "colors": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#141414",
+      "surface_highlight": "#1F1F1F"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "borders": {
+      "default": "#27272A",
+      "focus": "#FFD600"
+    },
+    "shifts": {
+      "morning_7to4": {
+        "color": "#FFD600",
+        "bg": "rgba(255, 214, 0, 0.1)",
+        "description": "High-Vis Safety Yellow for daytime industrial."
+      },
+      "afternoon_12to9": {
+        "color": "#FF8A00",
+        "bg": "rgba(255, 138, 0, 0.1)",
+        "description": "Signal Orange for transition shift."
+      },
+      "night_9to6": {
+        "color": "#00E5FF",
+        "bg": "rgba(0, 229, 255, 0.1)",
+        "description": "Neon Cyan for low-light legibility."
+      }
+    },
+    "leaves": {
+      "annual_vacation": "#34C759",
+      "sick_leave": "#FF3B30",
+      "comp_off": "#0A84FF",
+      "emergency": "#FF9F0A"
+    },
+    "actions": {
+      "primary": "#FFFFFF",
+      "primary_text": "#0A0A0A",
+      "secondary": "#27272A",
+      "secondary_text": "#FFFFFF",
+      "danger": "#FF3B30"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "IBM Plex Sans",
+      "body": "Inter",
+      "mono": "IBM Plex Mono"
+    },
+    "hierarchy": {
+      "h1_hero": "text-4xl tracking-tighter font-bold text-white",
+      "h2_section": "text-2xl tracking-tight font-semibold text-white",
+      "h3_card": "text-lg tracking-tight font-medium text-white",
+      "body": "text-base leading-relaxed text-zinc-400",
+      "label_overline": "text-xs tracking-[0.2em] uppercase font-bold text-zinc-500",
+      "stat_number": "text-5xl tracking-tighter font-black text-white"
+    }
+  },
+  "layout_and_spacing": {
+    "system": "Tailwind standard scale adapted for NativeWind",
+    "screen_padding": "p-4 md:p-6",
+    "card_padding": "p-5",
+    "gap_standard": "gap-4",
+    "touch_targets": "Minimum 48px height (h-12) for all interactive elements to ensure ergonomic mobile usage in an industrial setting.",
+    "surface_strategy": "Grid Borders (Technical Look). Use 1px solid borders (border-zinc-800) with no shadows. Flat, tactical minimalism."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-white text-black h-12 rounded-sm border border-white font-bold tracking-wide active:bg-zinc-200 flex items-center justify-center",
+      "secondary": "bg-zinc-900 text-white h-12 rounded-sm border border-zinc-700 font-medium active:bg-zinc-800 flex items-center justify-center",
+      "shift_badge": "px-3 py-1 text-xs font-bold uppercase rounded-sm border"
+    },
+    "cards": {
+      "base": "bg-zinc-950 border border-zinc-800 rounded-lg p-5 flex flex-col gap-2",
+      "stat_card": "bg-zinc-950 border border-zinc-800 rounded-lg p-5 flex flex-col items-center justify-center gap-1",
+      "mission_card": "bg-[#141414] border-l-4 border-y border-r border-zinc-800 border-l-current rounded-lg p-4"
+    },
+    "forms": {
+      "input": "h-12 bg-zinc-900 border border-zinc-800 text-white px-4 rounded-sm focus:border-[#FFD600]",
+      "label": "text-sm font-medium text-zinc-400 mb-1"
+    },
+    "navigation": {
+      "bottom_tab": "bg-[#0A0A0A] border-t border-zinc-800 h-20 pb-safe pt-2",
+      "header": "bg-[#0A0A0A] border-b border-zinc-800 h-14 flex flex-row items-center justify-between px-4"
+    }
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/da884466-d91f-4b87-b67b-1b279911f97e/images/8df459a8f432a298283cddb3146fbe81a6ab182bc9811a8792ba20570d0227c5.png",
+        "category": "login_background",
+        "description": "Dark cinematic warehouse interior, dramatic lighting, high contrast. Use as a full-screen background on the login/onboarding screen with a black/60 overlay."
+      },
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/da884466-d91f-4b87-b67b-1b279911f97e/images/0f7bb61d8dac7066e026fdb6a4a90b82eca6a939defe839c3952d3f053a75f2f.png",
+        "category": "texture_overlay",
+        "description": "Abstract tactical grid pattern. Use as a repeating background texture in dashboard headers or empty states at 10% opacity."
+      },
+      {
+        "url": "https://images.pexels.com/photos/4484043/pexels-photo-4484043.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "avatar_placeholder_1",
+        "description": "Portrait of a bearded man in a warehouse. Use for employee list placeholders."
+      },
+      {
+        "url": "https://images.pexels.com/photos/4484044/pexels-photo-4484044.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "avatar_placeholder_2",
+        "description": "Young bearded man in uniform. Use for employee profiles."
+      }
+    ]
+  },
+  "icons": {
+    "library": "lucide-react-native",
+    "instructions": "Use Lucide icons. Stroke width 2. For critical actions, use dual-format (Icon + Text)."
+  },
+  "testing": {
+    "data_testid_rules": "All interactive and key informational elements MUST include a `testID` attribute (React Native equivalent of data-testid). Convention: kebab-case, role-based. e.g., testID='login-form-submit-button', testID='shift-card-morning'"
+  },
+  "instructions_to_main_agent": [
+    "Write components in .js files, NOT .tsx files. Use standard PropTypes or JSDoc if type validation is needed.",
+    "This is a React Native Expo app. Translate Tailwind classes provided in these guidelines to NativeWind or React Native StyleSheet. Use standard RN components (<View>, <Text>, <TouchableOpacity>).",
+    "Implement a strict Dark Theme. Do NOT implement a light theme to ensure low-light safety for night workers.",
+    "Ensure minimum touch targets of 48x48px across all interactive elements.",
+    "For the Schedule View, use a horizontal scrollable week calendar at the top, with mission-linked cards below for the selected day's shifts.",
+    "Use the exact shift and leave colors defined in the colors section to maintain operational clarity.",
+    "Do NOT use drop shadows. Rely entirely on 1px borders (border-zinc-800) for separation. This creates a flat, technical, tactical UI.",
+    "Use the provided image URLs exclusively for media needs. Do NOT use any placeholder services."
+  ]
+}
