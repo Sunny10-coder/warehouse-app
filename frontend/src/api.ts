@@ -2,9 +2,12 @@ import axios, { AxiosError, AxiosInstance } from "axios";
 import { storage } from "@/src/utils/storage";
 
 const RAW_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
-const BASE_URL = RAW_BASE_URL && !RAW_BASE_URL.startsWith("http")
-  ? `https://${RAW_BASE_URL}`
-  : RAW_BASE_URL;
+const BASE_URL = (() => {
+  if (!RAW_BASE_URL) return "";
+  if (RAW_BASE_URL.startsWith("http")) return RAW_BASE_URL;
+  if (RAW_BASE_URL.includes(".")) return `https://${RAW_BASE_URL}`;
+  return `https://${RAW_BASE_URL}.onrender.com`;
+})();
 const TOKEN_KEY = "wh_access_token";
 
 export const api: AxiosInstance = axios.create({
