@@ -39,8 +39,8 @@ services:
     rootDir: frontend
     branch: main
     autoDeploy: true
-    buildCommand: npm ci && npx expo export --platform web
-    staticPublishPath: ./dist
+    buildCommand: cd frontend && npm ci && npx expo export --platform web
+    staticPublishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
