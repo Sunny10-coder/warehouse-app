@@ -144,6 +144,7 @@ class TokenResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
@@ -491,6 +492,8 @@ async def list_users(
 @app.patch("/api/users/{user_id}", response_model=UserPublic)
 async def update_user(user_id: str, payload: UserUpdate, admin: dict = Depends(require_admin), db=Depends(get_db)):
     update = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    if "email" in update:
+        update["email"] = update["email"].lower()
     password = update.pop("password", None)
     if password is not None:
         if len(password) < 6:
@@ -498,9 +501,12 @@ async def update_user(user_id: str, payload: UserUpdate, admin: dict = Depends(r
         update["hashed_password"] = pwd_context.hash(password)
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
-    res = await db.users.find_one_and_update(
-        {"_id": user_id}, {"$set": update}, return_document=True
-    )
+    try:
+        res = await db.users.find_one_and_update(
+            {"_id": user_id}, {"$set": update}, return_document=True
+        )
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Email already registered")
     if not res:
         raise HTTPException(status_code=404, detail="User not found")
     await realtime.broadcast("users", "updated", {"user_id": user_id})
@@ -844,6 +850,19 @@ async def get_attendance(
         q["user_id"] = user_id
     docs = await db.attendance.find(q, {"_id": 0}).sort("attendance_date", 1).to_list(2000)
     return [AttendanceMark(**d) for d in docs]
+
+
+@app.delete("/api/attendance/{user_id}/{attendance_date}")
+async def delete_attendance(
+    user_id: str,
+    attendance_date: str,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    result = await db.attendance.delete_one({"user_id": user_id, "attendance_date": attendance_date})
+    if result.deleted_count:
+        await realtime.broadcast("attendance", "deleted", {"user_id": user_id, "date": attendance_date})
+    return {"deleted": result.deleted_count}
 
 
 @app.get("/api/attendance/monthly/{user_id}/{year}/{month}")

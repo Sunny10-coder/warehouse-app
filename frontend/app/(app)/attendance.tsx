@@ -166,6 +166,7 @@ export default function Attendance() {
             </View>
           ) : (
             <>
+              <Text style={styles.unmarkedText}>Not marked yet</Text>
               <View style={styles.actionsRow}>
                 <TouchableOpacity
                   testID="attendance-clock-in-now"
@@ -267,7 +268,7 @@ export default function Attendance() {
         <View style={styles.modalBg}>
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Clock In / Out</Text>
+              <Text style={styles.modalTitle}>Manual Attendance</Text>
               <TouchableOpacity onPress={() => setShowModal(false)}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -298,7 +299,7 @@ export default function Attendance() {
               disabled={submitting}
             >
               {submitting ? <ActivityIndicator color={colors.bg} /> :
-                <Text style={styles.modalBtnText}>SUBMIT</Text>}
+                <Text style={styles.modalBtnText}>SUBMIT ATTENDANCE</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
   markedStatus: { color: colors.textSecondary, fontSize: 13 },
   markedStatusBold: { color: colors.success, fontWeight: "800" },
   markedDetail: { color: colors.textPrimary, fontSize: 13, marginTop: 2 },
+  unmarkedText: { color: colors.textSecondary, fontSize: 13, marginTop: 14 },
   clockOutNowBtn: {
     flexDirection: "row", alignItems: "center", gap: 4,
     backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 4,

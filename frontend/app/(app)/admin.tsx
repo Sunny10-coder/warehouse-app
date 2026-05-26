@@ -519,6 +519,7 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
 
 function UserEditModal({ user, onClose, onSaved }: any) {
   const [fullName, setFullName] = useState(user?.full_name || "");
+  const [email, setEmail] = useState(user?.email || "");
   const [password, setPassword] = useState("");
   const [shift, setShift] = useState(user?.default_shift || "morning");
   const [team, setTeam] = useState(user?.team || "");
@@ -531,6 +532,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   useEffect(() => {
     if (!user) return;
     setFullName(user.full_name || "");
+    setEmail(user.email || "");
     setPassword("");
     setShift(user.default_shift || "morning");
     setTeam(user.team || "");
@@ -543,10 +545,15 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   if (!user) return null;
 
   const save = async () => {
+    if (!email.trim()) {
+      Alert.alert("Required", "Email / login ID is required.");
+      return;
+    }
     setSaving(true);
     try {
       const payload: any = {
         full_name: fullName,
+        email: email.trim(),
         default_shift: shift,
         team: team || null,
         location,
@@ -598,6 +605,18 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             style={styles.modalInput}
             placeholder="Employee name"
             placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.modalLabel}>Email / Login ID</Text>
+          <TextInput
+            testID="edit-email"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.modalInput}
+            placeholder="employee@warehouse.com"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
 
           <Text style={styles.modalLabel}>New Login Password</Text>
