@@ -8,6 +8,7 @@ import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveColor, leaveLabel, roleLabel } from "@/src/theme";
 
 function monthBounds(year: number, month: number) {
@@ -49,6 +50,7 @@ export default function Reports() {
   }, [targetId, year, month, isAdmin, users.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["attendance", "leaves", "schedules", "users"]);
 
   const monthName = new Date(year, month, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 

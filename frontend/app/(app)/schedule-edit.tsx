@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor } from "@/src/theme";
 
 const SHIFT_GROUPS = [
@@ -48,6 +49,7 @@ export default function ScheduleEdit() {
   }, [date]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["schedules", "users", "leaves"]);
 
   const changeShift = async (userId: string, shiftType: string) => {
     try {

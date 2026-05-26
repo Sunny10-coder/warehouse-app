@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveLabel, leaveColor, roleLabel, shiftLabel } from "@/src/theme";
 
 const SHIFT_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "off"];
@@ -40,6 +41,7 @@ export default function Admin() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["users", "leaves", "schedules"]);
 
   const approveLeave = async (id: string) => {
     try {
@@ -387,9 +389,9 @@ function UserEditModal({ user, onClose, onSaved }: any) {
           </View>
 
           <Text style={styles.modalLabel}>Leave Balances</Text>
-          <BalanceEditor testID="balance-annual" label="Annual" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d) => adjustBalance("annual", d)} />
-          <BalanceEditor testID="balance-sick" label="Sick" color={colors.sick} value={sick} setValue={setSick} onAdjust={(d) => adjustBalance("sick", d)} />
-          <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d) => adjustBalance("comp_off", d)} />
+          <BalanceEditor testID="balance-annual" label="Annual" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d: number) => adjustBalance("annual", d)} />
+          <BalanceEditor testID="balance-sick" label="Sick" color={colors.sick} value={sick} setValue={setSick} onAdjust={(d: number) => adjustBalance("sick", d)} />
+          <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d: number) => adjustBalance("comp_off", d)} />
 
           <TouchableOpacity
             testID="user-save"

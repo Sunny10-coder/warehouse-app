@@ -8,6 +8,7 @@ import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor } from "@/src/theme";
 
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -58,6 +59,7 @@ export default function Schedule() {
   }, [weekDays, viewMode, user?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["schedules", "leaves", "users"]);
 
   const selectedDate = fmtDate(weekDays[selectedDay]);
   const dayEntries = entries.filter(e => e.shift_date === selectedDate);
@@ -250,11 +252,6 @@ const styles = StyleSheet.create({
   dayNum: { color: colors.textPrimary, fontSize: 20, fontWeight: "800", marginTop: 4 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.morning, marginTop: 4 },
   dayTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: "700", marginBottom: 10 },
-  editDayBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: colors.morning, height: 40, borderRadius: 4, marginBottom: 12,
-  },
-  editDayText: { color: colors.bg, fontWeight: "800", letterSpacing: 1, fontSize: 12 },
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   summaryChip: { paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderRadius: 2 },
   summaryChipText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },

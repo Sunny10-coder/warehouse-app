@@ -8,6 +8,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor } from "@/src/theme";
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
@@ -47,6 +48,7 @@ export default function Attendance() {
   }, [user?.id, monthStart]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["attendance", "schedules"]);
 
   const quickMark = async (status: string) => {
     setSubmitting(true);

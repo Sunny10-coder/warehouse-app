@@ -12,6 +12,8 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
+        <meta name="theme-color" content="#0A0A0A" />
+        <link rel="manifest" href="/manifest.json" />
         {/*
           Disable body scrolling on web to make ScrollView components work correctly.
           If you want to enable scrolling, remove `ScrollViewStyleReset` and
@@ -38,6 +40,17 @@ export default function Root({ children }: PropsWithChildren) {
         }}
       >
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function () {
+                  navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Annotated, Any, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -73,6 +73,37 @@ SHIFT_TIMES = {
     "off": ("", ""),
     "leave": ("", ""),
 }
+
+
+class RealtimeHub:
+    def __init__(self):
+        self.connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self.connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self.connections.discard(websocket)
+
+    async def broadcast(self, topic: str, action: str, payload: Optional[dict] = None) -> None:
+        stale: list[WebSocket] = []
+        message = {
+            "topic": topic,
+            "action": action,
+            "payload": payload or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        for websocket in list(self.connections):
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                stale.append(websocket)
+        for websocket in stale:
+            self.disconnect(websocket)
+
+
+realtime = RealtimeHub()
 
 # ---------------------------------------------------------------------------
 # Models
@@ -412,6 +443,7 @@ async def register(payload: UserCreate, db=Depends(get_db)):
         await db.users.insert_one(doc)
     except DuplicateKeyError:
         raise HTTPException(status_code=400, detail="Email already registered")
+    await realtime.broadcast("users", "registered", {"user_id": doc["_id"]})
     return _user_public(doc)
 
 
@@ -465,6 +497,7 @@ async def update_user(user_id: str, payload: UserUpdate, admin: dict = Depends(r
     )
     if not res:
         raise HTTPException(status_code=404, detail="User not found")
+    await realtime.broadcast("users", "updated", {"user_id": user_id})
     return _user_public(res)
 
 
@@ -475,6 +508,7 @@ async def approve_user(user_id: str, admin: dict = Depends(require_admin), db=De
     )
     if not res:
         raise HTTPException(status_code=404, detail="User not found")
+    await realtime.broadcast("users", "approved", {"user_id": user_id})
     return _user_public(res)
 
 
@@ -530,12 +564,14 @@ async def create_or_update_schedule(
         {"$set": entry.dict()},
         upsert=True,
     )
+    await realtime.broadcast("schedules", "saved", {"user_id": u["_id"], "date": payload.shift_date})
     return entry
 
 
 @app.delete("/api/schedules/{user_id}/{shift_date}")
 async def delete_schedule(user_id: str, shift_date: str, admin: dict = Depends(require_admin), db=Depends(get_db)):
     await db.schedules.delete_one({"user_id": user_id, "shift_date": shift_date})
+    await realtime.broadcast("schedules", "deleted", {"user_id": user_id, "date": shift_date})
     return {"deleted": True}
 
 
@@ -637,6 +673,7 @@ async def generate_schedule(
         if weekday == 6:
             sunday_idx += 2
 
+    await realtime.broadcast("schedules", "generated", {"start_date": payload.start_date, "days": days})
     return {"generated": generated, "days": days}
 
 
@@ -700,6 +737,7 @@ async def mark_attendance(
         {"$set": record.dict()},
         upsert=True,
     )
+    await realtime.broadcast("attendance", "saved", {"user_id": target_id, "date": payload.attendance_date})
     return record
 
 
@@ -863,6 +901,7 @@ async def apply_leave(
         reason=payload.reason,
     )
     await db.leaves.insert_one(leave.dict())
+    await realtime.broadcast("leaves", "requested", {"leave_id": leave.id, "user_id": user["_id"]})
     return leave
 
 
@@ -930,6 +969,9 @@ async def act_on_leave(
             )
 
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})
+    await realtime.broadcast("leaves", new_status, {"leave_id": leave_id, "user_id": leave["user_id"]})
+    if new_status == "approved":
+        await realtime.broadcast("schedules", "leave_applied", {"leave_id": leave_id, "user_id": leave["user_id"]})
     return LeaveRequest(**leave)
 
 
@@ -982,6 +1024,28 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.websocket("/api/realtime/ws")
+async def realtime_ws(websocket: WebSocket, token: str, db=Depends(get_db)):
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        user = await db.users.find_one({"_id": user_id}) if user_id else None
+        if not user or user.get("status") != "active":
+            await websocket.close(code=1008)
+            return
+    except JWTError:
+        await websocket.close(code=1008)
+        return
+
+    await realtime.connect(websocket)
+    await websocket.send_json({"topic": "all", "action": "connected"})
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime.disconnect(websocket)
 
 
 # ---------------------------------------------------------------------------
@@ -1054,7 +1118,8 @@ async def calendar_month(
         if st in days[d]["coverage"]:
             days[d]["coverage"][st] += 1
 
-    # Bucket leaves into the dates they overlap
+    # Bucket leaves into the dates they overlap (dedup by user_id+leave_id)
+    seen_per_day: dict[str, set] = {}
     for lv in leaves:
         ls = max(start, datetime.strptime(lv["start_date"], "%Y-%m-%d").date())
         le = min(end, datetime.strptime(lv["end_date"], "%Y-%m-%d").date())
@@ -1062,19 +1127,23 @@ async def calendar_month(
         while cur <= le:
             d = cur.isoformat()
             if d in days:
-                days[d]["leaves"].append({
-                    "user_id": lv["user_id"],
-                    "user_name": lv["user_name"],
-                    "leave_type": lv["leave_type"],
-                    "status": lv["status"],
-                })
-                # Approved leaves reduce coverage
-                if lv["status"] == "approved":
-                    for sk in days[d]["coverage"].keys():
-                        # Remove from coverage if user was scheduled to that shift
-                        for entry in days[d]["shifts"].get(sk, []):
-                            if entry["user_id"] == lv["user_id"]:
-                                days[d]["coverage"][sk] = max(0, days[d]["coverage"][sk] - 1)
+                key = f"{lv['user_id']}:{lv['leave_type']}:{lv['status']}"
+                seen = seen_per_day.setdefault(d, set())
+                if key not in seen:
+                    seen.add(key)
+                    days[d]["leaves"].append({
+                        "user_id": lv["user_id"],
+                        "user_name": lv["user_name"],
+                        "leave_type": lv["leave_type"],
+                        "status": lv["status"],
+                    })
+                    # Approved leaves reduce coverage (only once per user per day)
+                    if lv["status"] == "approved":
+                        for sk in days[d]["coverage"].keys():
+                            for entry in days[d]["shifts"].get(sk, []):
+                                if entry["user_id"] == lv["user_id"]:
+                                    days[d]["coverage"][sk] = max(0, days[d]["coverage"][sk] - 1)
+                                    break
             cur += timedelta(days=1)
 
     # Compute status per day (only count weekdays mon-fri for strict critical)

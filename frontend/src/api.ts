@@ -21,6 +21,7 @@ api.interceptors.request.use(async (config) => {
 export const saveToken = (token: string) => storage.secureSet(TOKEN_KEY, token);
 export const clearToken = () => storage.secureRemove(TOKEN_KEY);
 export const getToken = () => storage.secureGet<string>(TOKEN_KEY, "");
+export const getBackendBaseUrl = () => BASE_URL;
 
 export const errMsg = (e: unknown): string => {
   const ax = e as AxiosError<any>;

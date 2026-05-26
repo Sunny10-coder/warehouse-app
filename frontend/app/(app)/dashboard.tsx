@@ -7,6 +7,7 @@ import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor, roleLabel } from "@/src/theme";
 
 type DashboardData = {
@@ -44,6 +45,7 @@ export default function Dashboard() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["users", "schedules", "attendance", "leaves"]);
 
   const today = data?.today_schedule;
   const todayColor = shiftColor(today?.shift_type);
@@ -80,8 +82,8 @@ export default function Dashboard() {
             <ActivityIndicator color={colors.morning} />
           ) : today ? (
             <>
-              <View style={styles.shiftBadge(todayColor.bg, todayColor.c)}>
-                <Text style={styles.shiftBadgeText(todayColor.c)}>
+              <View style={shiftBadgeStyle(todayColor.bg, todayColor.c)}>
+                <Text style={shiftBadgeTextStyle(todayColor.c)}>
                   {shiftLabel[today.shift_type] || today.shift_type}
                 </Text>
               </View>
@@ -202,6 +204,22 @@ function getGreeting() {
   return "GOOD EVENING";
 }
 
+function shiftBadgeStyle(bg: string, c: string) {
+  return {
+    alignSelf: "flex-start" as const,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 2,
+    backgroundColor: bg,
+    borderColor: c,
+    borderWidth: 1,
+  };
+}
+
+function shiftBadgeTextStyle(c: string) {
+  return { color: c, fontSize: 11, fontWeight: "800" as const, letterSpacing: 1 };
+}
+
 function StatCard({ icon, color, label, value }: any) {
   return (
     <View style={styles.statCard} testID={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
@@ -260,12 +278,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4,
     borderRadius: 8, padding: 18, minHeight: 100,
   },
-  shiftBadge: (bg: string, c: string) => ({
-    alignSelf: "flex-start" as const,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 2,
-    backgroundColor: bg, borderColor: c, borderWidth: 1,
-  }),
-  shiftBadgeText: (c: string) => ({ color: c, fontSize: 11, fontWeight: "800", letterSpacing: 1 }),
   timeRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
   timeText: { color: colors.textPrimary, fontSize: 16, fontWeight: "600" },
   hoursText: { color: colors.morning, fontSize: 14, fontWeight: "700", marginLeft: "auto" },

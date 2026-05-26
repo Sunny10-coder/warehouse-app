@@ -8,6 +8,7 @@ import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor, leaveLabel, leaveColor } from "@/src/theme";
 
 const DOW = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -58,6 +59,7 @@ export default function CommandCenter() {
   }, [year, month]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useRealtimeRefresh(load, ["schedules", "leaves", "users"]);
 
   const monthLabel = useMemo(
     () => new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }),

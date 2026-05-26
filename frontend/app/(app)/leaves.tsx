@@ -8,6 +8,7 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveLabel, leaveColor } from "@/src/theme";
 
 const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
@@ -41,6 +42,7 @@ export default function Leaves() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); refresh(); }, [load, refresh]));
+  useRealtimeRefresh(load, ["leaves", "users"]);
 
   const submit = async () => {
     if (!startDate || !endDate || !reason) {

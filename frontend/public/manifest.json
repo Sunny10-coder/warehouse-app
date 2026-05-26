@@ -1,0 +1,17 @@
+{
+  "name": "Warehouse Workforce",
+  "short_name": "Warehouse",
+  "description": "Warehouse schedules, attendance, leave approvals, and reports.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
