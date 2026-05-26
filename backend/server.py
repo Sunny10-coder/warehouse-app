@@ -512,6 +512,64 @@ async def approve_user(user_id: str, admin: dict = Depends(require_admin), db=De
     return _user_public(res)
 
 
+@app.post("/api/users", response_model=UserPublic)
+async def create_user(payload: UserCreate, admin: dict = Depends(require_admin), db=Depends(get_db)):
+    if payload.role not in {"manager", "asst_manager", "document_controller", "employee"}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "email": payload.email.lower(),
+        "hashed_password": pwd_context.hash(payload.password),
+        "full_name": payload.full_name,
+        "role": payload.role,
+        "status": "active",
+        "team": payload.team,
+        "location": payload.location,
+        "default_shift": "admin" if payload.role in ADMIN_ROLES else None,
+        "annual_leave_balance": 30,
+        "sick_leave_balance": 12,
+        "comp_off_balance": 0,
+        "created_at": datetime.now(timezone.utc),
+    }
+    try:
+        await db.users.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    await realtime.broadcast("users", "created", {"user_id": doc["_id"]})
+    return _user_public(doc)
+
+
+@app.delete("/api/users/{user_id}")
+async def delete_user(user_id: str, admin: dict = Depends(require_admin), db=Depends(get_db)):
+    if user_id == admin["_id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.attendance.delete_many({"user_id": user_id})
+    await db.schedules.delete_many({"user_id": user_id})
+    await db.leaves.delete_many({"user_id": user_id})
+    await db.users.delete_one({"_id": user_id})
+    await realtime.broadcast("users", "deleted", {"user_id": user_id})
+    await realtime.broadcast("all", "user_data_deleted", {"user_id": user_id})
+    return {"deleted": True}
+
+
+@app.post("/api/admin/reset-operational-data")
+async def reset_operational_data(admin: dict = Depends(require_admin), db=Depends(get_db)):
+    attendance = await db.attendance.delete_many({})
+    schedules = await db.schedules.delete_many({})
+    leaves = await db.leaves.delete_many({})
+    await realtime.broadcast("all", "operational_data_reset", {})
+    return {
+        "deleted": {
+            "attendance": attendance.deleted_count,
+            "schedules": schedules.deleted_count,
+            "leaves": leaves.deleted_count,
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # Schedule
 # ---------------------------------------------------------------------------

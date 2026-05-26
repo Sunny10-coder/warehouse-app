@@ -25,7 +25,18 @@ api.interceptors.request.use(async (config) => {
 });
 
 export const saveToken = (token: string) => storage.secureSet(TOKEN_KEY, token);
-export const clearToken = () => storage.secureRemove(TOKEN_KEY);
+export const clearToken = async () => {
+  await storage.secureRemove(TOKEN_KEY);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.sessionStorage.removeItem(TOKEN_KEY);
+      window.indexedDB?.deleteDatabase("AsyncStorage");
+    } catch {
+      // Browser storage cleanup is best-effort; auth state still clears in memory.
+    }
+  }
+};
 export const getToken = () => storage.secureGet<string>(TOKEN_KEY, "");
 export const getBackendBaseUrl = () => BASE_URL;
 

@@ -20,6 +20,7 @@ export default function Admin() {
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<any>(null);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
   const [genStart, setGenStart] = useState("");
   const [genTeam, setGenTeam] = useState<"A" | "B">("A");
   const [generating, setGenerating] = useState(false);
@@ -58,6 +59,51 @@ export default function Admin() {
     } catch (e) {
       Alert.alert("Error", errMsg(e));
     }
+  };
+
+  const deleteUser = (u: any) => {
+    Alert.alert(
+      "Delete staff login",
+      `Delete ${u.full_name}? This removes their account plus their schedule, attendance, and leave records.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api.delete(`/users/${u.id}`);
+              await load();
+            } catch (e) {
+              Alert.alert("Error", errMsg(e));
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const resetOperationalData = () => {
+    Alert.alert(
+      "Clear operational data",
+      "This deletes all schedules, attendance records, and leave requests. Staff logins stay. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const r = await api.post("/admin/reset-operational-data");
+              Alert.alert("Cleared", `Deleted ${r.data.deleted.attendance} attendance, ${r.data.deleted.schedules} schedule, and ${r.data.deleted.leaves} leave records.`);
+              await load();
+            } catch (e) {
+              Alert.alert("Error", errMsg(e));
+            }
+          },
+        },
+      ],
+    );
   };
 
   const approveUser = async (id: string) => {
@@ -173,7 +219,17 @@ export default function Admin() {
               </>
             )}
 
-            <Text style={styles.sectionTitle}>All Staff ({users.filter(u => u.status === "active").length})</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>All Staff ({users.filter(u => u.status === "active").length})</Text>
+              <TouchableOpacity
+                testID="admin-add-staff"
+                style={styles.addStaffBtn}
+                onPress={() => setCreateUserOpen(true)}
+              >
+                <Ionicons name="person-add" size={15} color={colors.bg} />
+                <Text style={styles.addStaffText}>ADD STAFF</Text>
+              </TouchableOpacity>
+            </View>
             {users.filter(u => u.status === "active").map(u => (
               <TouchableOpacity
                 key={u.id}
@@ -195,60 +251,94 @@ export default function Admin() {
                     <Text style={styles.userShift}>Default: {shiftLabel[u.default_shift] || u.default_shift}</Text>
                   )}
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                <View style={styles.userActions}>
+                  <TouchableOpacity
+                    testID={`delete-user-${u.id}`}
+                    style={styles.deleteUserBtn}
+                    onPress={(event: any) => {
+                      event?.stopPropagation?.();
+                      deleteUser(u);
+                    }}
+                  >
+                    <Ionicons name="trash" size={16} color={colors.danger} />
+                  </TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </View>
               </TouchableOpacity>
             ))}
           </>
         )}
 
         {tab === "schedule" && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Auto-Generate Schedule</Text>
-            <Text style={styles.helper}>
-              Generates a 2-week schedule for all active staff based on their default shift.
-              Manager off 1st Sat, Asst+DC off 2nd Sat.
-            </Text>
-
-            <Text style={styles.modalLabel}>Start Date (must be a Monday)</Text>
-            <TextInput
-              testID="generate-start-date"
-              value={genStart}
-              onChangeText={setGenStart}
-              style={styles.modalInput}
-              placeholder="2026-06-01"
-              placeholderTextColor={colors.textMuted}
-            />
-
-            <Text style={styles.modalLabel}>Active Saturday Team (Week 1)</Text>
-            <View style={styles.teamRow}>
-              {(["A", "B"] as const).map(t => (
-                <TouchableOpacity
-                  key={t}
-                  testID={`gen-team-${t}`}
-                  onPress={() => setGenTeam(t)}
-                  style={[styles.teamBtn, genTeam === t && styles.teamBtnActive]}
-                >
-                  <Text style={[styles.teamBtnText, genTeam === t && { color: colors.bg }]}>
-                    TEAM {t}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          <>
+            <View style={[styles.card, { borderLeftColor: colors.danger }]}>
+              <Text style={styles.sectionTitle}>Fresh Start</Text>
+              <Text style={styles.helper}>
+                Clears schedules, attendance, and leave requests. Staff logins remain active.
+              </Text>
+              <TouchableOpacity
+                testID="admin-reset-operational-data"
+                style={styles.dangerBtn}
+                onPress={resetOperationalData}
+              >
+                <Ionicons name="refresh" size={16} color="#fff" />
+                <Text style={styles.dangerBtnText}>CLEAR OPERATIONAL DATA</Text>
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              testID="generate-submit"
-              style={[styles.submitBtn, generating && { opacity: 0.6 }]}
-              onPress={generate}
-              disabled={generating}
-            >
-              {generating ? <ActivityIndicator color={colors.bg} /> :
-                <Text style={styles.submitBtnText}>GENERATE 2-WEEK SCHEDULE</Text>}
-            </TouchableOpacity>
-          </View>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Auto-Generate Schedule</Text>
+              <Text style={styles.helper}>
+                Generates a 2-week schedule for all active staff based on their default shift.
+                Manager off 1st Sat, Asst+DC off 2nd Sat.
+              </Text>
+
+              <Text style={styles.modalLabel}>Start Date (must be a Monday)</Text>
+              <TextInput
+                testID="generate-start-date"
+                value={genStart}
+                onChangeText={setGenStart}
+                style={styles.modalInput}
+                placeholder="2026-06-01"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={styles.modalLabel}>Active Saturday Team (Week 1)</Text>
+              <View style={styles.teamRow}>
+                {(["A", "B"] as const).map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    testID={`gen-team-${t}`}
+                    onPress={() => setGenTeam(t)}
+                    style={[styles.teamBtn, genTeam === t && styles.teamBtnActive]}
+                  >
+                    <Text style={[styles.teamBtnText, genTeam === t && { color: colors.bg }]}>
+                      TEAM {t}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                testID="generate-submit"
+                style={[styles.submitBtn, generating && { opacity: 0.6 }]}
+                onPress={generate}
+                disabled={generating}
+              >
+                {generating ? <ActivityIndicator color={colors.bg} /> :
+                  <Text style={styles.submitBtnText}>GENERATE 2-WEEK SCHEDULE</Text>}
+              </TouchableOpacity>
+            </View>
+          </>
         )}
       </ScrollView>
 
       <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />
+      <CreateUserModal
+        visible={createUserOpen}
+        onClose={() => setCreateUserOpen(false)}
+        onSaved={() => { setCreateUserOpen(false); load(); }}
+      />
     </SafeAreaView>
   );
 }
@@ -277,6 +367,153 @@ function Empty({ icon, text }: any) {
       <Ionicons name={icon} size={48} color={colors.textMuted} />
       <Text style={{ color: colors.textMuted, fontSize: 14 }}>{text}</Text>
     </View>
+  );
+}
+
+function CreateUserModal({ visible, onClose, onSaved }: any) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("employee");
+  const [team, setTeam] = useState("A");
+  const [location, setLocation] = useState("warehouse");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!fullName || !email || !password) {
+      Alert.alert("Required", "Name, email, and password are required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/users", {
+        full_name: fullName.trim(),
+        email: email.trim(),
+        password,
+        role,
+        team: role === "document_controller" ? null : team,
+        location,
+      });
+      setFullName("");
+      setEmail("");
+      setPassword("");
+      setRole("employee");
+      setTeam("A");
+      setLocation("warehouse");
+      onSaved();
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBg}>
+        <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Staff Login</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalLabel}>Full Name</Text>
+          <TextInput
+            testID="create-user-name"
+            value={fullName}
+            onChangeText={setFullName}
+            style={styles.modalInput}
+            placeholder="Employee name"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.modalLabel}>Email</Text>
+          <TextInput
+            testID="create-user-email"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.modalInput}
+            placeholder="employee@warehouse.com"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+
+          <Text style={styles.modalLabel}>Temporary Password</Text>
+          <TextInput
+            testID="create-user-password"
+            value={password}
+            onChangeText={setPassword}
+            style={styles.modalInput}
+            placeholder="Give this to the employee"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.modalLabel}>Role</Text>
+          <View style={styles.optGrid}>
+            {[
+              ["employee", "Employee"],
+              ["manager", "Manager"],
+              ["asst_manager", "Assistant"],
+              ["document_controller", "Doc Controller"],
+            ].map(([value, label]) => (
+              <TouchableOpacity
+                key={value}
+                testID={`create-role-${value}`}
+                onPress={() => setRole(value)}
+                style={[styles.optChip, role === value && styles.optChipActive]}
+              >
+                <Text style={[styles.optChipText, role === value && { color: colors.bg }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.modalLabel}>Team</Text>
+          <View style={styles.optGrid}>
+            {["A", "B", ""].map(t => (
+              <TouchableOpacity
+                key={t || "none"}
+                testID={`create-team-${t || "none"}`}
+                onPress={() => setTeam(t)}
+                style={[styles.optChip, team === t && styles.optChipActive]}
+              >
+                <Text style={[styles.optChipText, team === t && { color: colors.bg }]}>
+                  {t ? `TEAM ${t}` : "NONE"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.modalLabel}>Location</Text>
+          <View style={styles.optGrid}>
+            {["warehouse", "ega"].map(l => (
+              <TouchableOpacity
+                key={l}
+                testID={`create-location-${l}`}
+                onPress={() => setLocation(l)}
+                style={[styles.optChip, location === l && styles.optChipActive]}
+              >
+                <Text style={[styles.optChipText, location === l && { color: colors.bg }]}>
+                  {l.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            testID="create-user-save"
+            style={[styles.submitBtn, saving && { opacity: 0.6 }]}
+            onPress={save}
+            disabled={saving}
+          >
+            {saving ? <ActivityIndicator color={colors.bg} /> :
+              <Text style={styles.submitBtnText}>CREATE ACTIVE LOGIN</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -465,6 +702,12 @@ const styles = StyleSheet.create({
   },
   btnSmText: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   sectionTitle: { color: colors.textPrimary, fontWeight: "700", fontSize: 14, marginTop: 8, marginBottom: 10 },
+  sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  addStaffBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.morning,
+    paddingHorizontal: 10, height: 34, borderRadius: 4,
+  },
+  addStaffText: { color: colors.bg, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   userRow: {
     flexDirection: "row", alignItems: "center", padding: 12, marginBottom: 8, gap: 12,
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 6,
@@ -474,6 +717,12 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", borderColor: colors.border, borderWidth: 1,
   },
   userAvatarText: { color: colors.morning, fontWeight: "800", fontSize: 13 },
+  userActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  deleteUserBtn: {
+    width: 34, height: 34, alignItems: "center", justifyContent: "center",
+    borderColor: colors.danger, borderWidth: 1, borderRadius: 4,
+    backgroundColor: "rgba(255,59,48,0.08)",
+  },
   helper: { color: colors.textSecondary, fontSize: 12, marginBottom: 14, lineHeight: 18 },
   modalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 6, marginTop: 8 },
   modalInput: {
@@ -492,6 +741,11 @@ const styles = StyleSheet.create({
     borderRadius: 4, marginTop: 16,
   },
   submitBtnText: { color: colors.bg, fontWeight: "800", letterSpacing: 1.5 },
+  dangerBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    height: 46, backgroundColor: colors.danger, borderRadius: 4, marginTop: 6,
+  },
+  dangerBtnText: { color: "#fff", fontWeight: "800", letterSpacing: 1.2, fontSize: 12 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,

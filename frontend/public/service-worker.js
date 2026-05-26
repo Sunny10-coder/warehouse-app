@@ -7,5 +7,5 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", () => {
-  // Network-first behavior keeps warehouse data current while enabling install prompts.
+  // A fetch listener is required for installability. Let the browser handle requests normally.
 });
