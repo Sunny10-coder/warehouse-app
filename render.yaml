@@ -4,7 +4,7 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     region: singapore
     branch: main
     autoDeploy: true
@@ -37,7 +37,6 @@ services:
     name: warehouse-web
     runtime: static
     rootDir: frontend
-    plan: free
     branch: main
     autoDeploy: true
     buildCommand: npm ci && npx expo export --platform web
