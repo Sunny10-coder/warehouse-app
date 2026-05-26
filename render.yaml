@@ -38,7 +38,6 @@ services:
     runtime: static
     rootDir: frontend
     plan: free
-    region: singapore
     branch: main
     autoDeploy: true
     buildCommand: npm ci && npx expo export --platform web
