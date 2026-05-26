@@ -145,6 +145,7 @@ class TokenResponse(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    password: Optional[str] = None
     role: Optional[str] = None
     team: Optional[str] = None
     location: Optional[str] = None
@@ -490,6 +491,11 @@ async def list_users(
 @app.patch("/api/users/{user_id}", response_model=UserPublic)
 async def update_user(user_id: str, payload: UserUpdate, admin: dict = Depends(require_admin), db=Depends(get_db)):
     update = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    password = update.pop("password", None)
+    if password is not None:
+        if len(password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        update["hashed_password"] = pwd_context.hash(password)
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
     res = await db.users.find_one_and_update(
@@ -1369,4 +1375,76 @@ async def employee_report(
             },
             "records": leave_docs,
         },
+    }
+
+
+@app.get("/api/reports/attendance/all")
+async def all_attendance_report(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    """Admin report for all marked attendance in a date range."""
+    today = date.today()
+    if not start_date:
+        start_date = today.replace(day=1).isoformat()
+    if not end_date:
+        end_date = today.isoformat()
+
+    docs = await db.attendance.find(
+        {"attendance_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0},
+    ).sort([("attendance_date", 1), ("user_name", 1)]).to_list(10000)
+
+    by_user: dict[str, dict[str, Any]] = {}
+    totals = {
+        "records": len(docs),
+        "total_hours": 0.0,
+        "present_days": 0,
+        "late_days": 0,
+        "absent_days": 0,
+        "half_days": 0,
+    }
+    status_fields = {
+        "present": "present_days",
+        "late": "late_days",
+        "absent": "absent_days",
+        "half_day": "half_days",
+    }
+    for rec in docs:
+        hours = float(rec.get("hours_worked", 0) or 0)
+        status_value = rec.get("status", "")
+        totals["total_hours"] += hours
+        if status_value in status_fields:
+            totals[status_fields[status_value]] += 1
+
+        user_id = rec["user_id"]
+        summary = by_user.setdefault(user_id, {
+            "user_id": user_id,
+            "user_name": rec.get("user_name", ""),
+            "records": 0,
+            "total_hours": 0.0,
+            "present_days": 0,
+            "late_days": 0,
+            "absent_days": 0,
+            "half_days": 0,
+        })
+        summary["records"] += 1
+        summary["total_hours"] += hours
+        if status_value in status_fields:
+            summary[status_fields[status_value]] += 1
+
+    totals["total_hours"] = round(totals["total_hours"], 2)
+    users = []
+    for summary in by_user.values():
+        summary["total_hours"] = round(summary["total_hours"], 2)
+        users.append(summary)
+    users.sort(key=lambda item: item["user_name"])
+
+    return {
+        "range": {"start_date": start_date, "end_date": end_date},
+        "totals": totals,
+        "users": users,
+        "records": docs,
     }

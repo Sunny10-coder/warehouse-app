@@ -21,8 +21,10 @@ export default function Reports() {
   const { user, isAdmin } = useAuth();
   const params = useLocalSearchParams<{ user_id?: string }>();
   const [targetId, setTargetId] = useState<string>(params.user_id || user?.id || "");
+  const [reportMode, setReportMode] = useState<"employee" | "all">("employee");
   const [users, setUsers] = useState<any[]>([]);
   const [report, setReport] = useState<any>(null);
+  const [allReport, setAllReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showUserPicker, setShowUserPicker] = useState(false);
   const now = new Date();
@@ -30,14 +32,21 @@ export default function Reports() {
   const [month, setMonth] = useState(now.getMonth()); // 0-indexed
 
   const load = useCallback(async () => {
-    if (!targetId) return;
+    if (reportMode === "employee" && !targetId) return;
     setLoading(true);
     try {
       const { start, end } = monthBounds(year, month);
-      const r = await api.get(`/reports/employee/${targetId}`, {
-        params: { start_date: start, end_date: end },
-      });
-      setReport(r.data);
+      if (isAdmin && reportMode === "all") {
+        const r = await api.get("/reports/attendance/all", {
+          params: { start_date: start, end_date: end },
+        });
+        setAllReport(r.data);
+      } else {
+        const r = await api.get(`/reports/employee/${targetId}`, {
+          params: { start_date: start, end_date: end },
+        });
+        setReport(r.data);
+      }
       if (isAdmin && users.length === 0) {
         const u = await api.get("/users", { params: { status_filter: "active" } });
         setUsers(u.data);
@@ -47,7 +56,7 @@ export default function Reports() {
     } finally {
       setLoading(false);
     }
-  }, [targetId, year, month, isAdmin, users.length]);
+  }, [targetId, reportMode, year, month, isAdmin, users.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useRealtimeRefresh(load, ["attendance", "leaves", "schedules", "users"]);
@@ -70,10 +79,12 @@ export default function Reports() {
         <View style={{ flex: 1 }}>
           <Text style={styles.overline}>REPORTS</Text>
           <Text style={styles.title}>
-            {targetId === user?.id ? "My Report" : (report?.user?.full_name || "Loading...")}
+            {reportMode === "all"
+              ? "All Staff Attendance"
+              : targetId === user?.id ? "My Report" : (report?.user?.full_name || "Loading...")}
           </Text>
         </View>
-        {isAdmin && (
+        {isAdmin && reportMode === "employee" && (
           <TouchableOpacity testID="reports-pick-user" style={styles.pickBtn} onPress={() => setShowUserPicker(true)}>
             <Ionicons name="people" size={18} color={colors.morning} />
           </TouchableOpacity>
@@ -90,11 +101,92 @@ export default function Reports() {
         </TouchableOpacity>
       </View>
 
+      {isAdmin && (
+        <View style={styles.modeRow}>
+          <TouchableOpacity
+            testID="reports-mode-employee"
+            style={[styles.modeBtn, reportMode === "employee" && styles.modeBtnActive]}
+            onPress={() => setReportMode("employee")}
+          >
+            <Text style={[styles.modeText, reportMode === "employee" && styles.modeTextActive]}>EMPLOYEE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="reports-mode-all"
+            style={[styles.modeBtn, reportMode === "all" && styles.modeBtnActive]}
+            onPress={() => setReportMode("all")}
+          >
+            <Text style={[styles.modeText, reportMode === "all" && styles.modeTextActive]}>ALL STAFF</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 80 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
       >
-        {!report ? (
+        {reportMode === "all" && isAdmin ? (
+          !allReport ? (
+            <ActivityIndicator color={colors.morning} style={{ marginTop: 40 }} />
+          ) : (
+            <>
+              <Text style={styles.sectionLabel}>FULL ATTENDANCE MARKED ({monthName})</Text>
+              <View style={styles.statsGrid}>
+                <BigStat label="Records" value={`${allReport.totals.records}`} color={colors.morning} icon="reader" />
+                <BigStat label="Total Hours" value={`${allReport.totals.total_hours}h`} color={colors.morning} icon="time" />
+                <BigStat label="Present Days" value={`${allReport.totals.present_days}`} color={colors.success} icon="checkmark-done" />
+                <BigStat label="Late Days" value={`${allReport.totals.late_days}`} color={colors.warning} icon="alarm" />
+                <BigStat label="Absent" value={`${allReport.totals.absent_days}`} color={colors.danger} icon="close-circle" />
+                <BigStat label="Half Days" value={`${allReport.totals.half_days}`} color={colors.night} icon="contrast" />
+              </View>
+
+              {allReport.users.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>STAFF SUMMARY ({allReport.users.length})</Text>
+                  {allReport.users.map((u: any) => (
+                    <View key={u.user_id} style={styles.summaryRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.summaryName}>{u.user_name}</Text>
+                        <Text style={styles.summaryMeta}>
+                          {u.records} marked · {u.present_days} present · {u.late_days} late · {u.absent_days} absent
+                        </Text>
+                      </View>
+                      <Text style={styles.summaryHours}>{u.total_hours}h</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {allReport.records.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>ATTENDANCE LOG ({allReport.records.length})</Text>
+                  {allReport.records.slice().reverse().map((a: any, i: number) => (
+                    <View key={`${a.user_id}-${a.attendance_date}-${i}`} style={styles.attRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.attDate}>{a.attendance_date} · {a.user_name}</Text>
+                        {(a.clock_in || a.clock_out) && (
+                          <Text style={styles.attTime}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
+                        )}
+                      </View>
+                      <Text style={[styles.attStatus, {
+                        color: a.status === "present" ? colors.success
+                          : a.status === "late" ? colors.warning
+                          : a.status === "absent" ? colors.danger : colors.textSecondary,
+                      }]}>
+                        {a.status.toUpperCase()}
+                      </Text>
+                      <Text style={styles.attHours}>{a.hours_worked}h</Text>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="reader-outline" size={32} color={colors.textMuted} />
+                  <Text style={styles.emptyText}>No attendance marked in this month</Text>
+                </View>
+              )}
+            </>
+          )
+        ) : !report ? (
           <ActivityIndicator color={colors.morning} style={{ marginTop: 40 }} />
         ) : (
           <>
@@ -154,9 +246,14 @@ export default function Reports() {
             {report.attendance.records.length > 0 && (
               <>
                 <Text style={styles.sectionLabel}>ATTENDANCE LOG ({report.attendance.records.length})</Text>
-                {report.attendance.records.slice().reverse().slice(0, 20).map((a: any, i: number) => (
+                {report.attendance.records.slice().reverse().map((a: any, i: number) => (
                   <View key={i} style={styles.attRow}>
-                    <Text style={styles.attDate}>{a.attendance_date}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.attDate}>{a.attendance_date}</Text>
+                      {(a.clock_in || a.clock_out) && (
+                        <Text style={styles.attTime}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
+                      )}
+                    </View>
                     <Text style={[styles.attStatus, {
                       color: a.status === "present" ? colors.success
                         : a.status === "late" ? colors.warning
@@ -244,6 +341,16 @@ const styles = StyleSheet.create({
     borderColor: colors.border, borderWidth: 1, borderRadius: 4,
   },
   monthLabel: { color: colors.textPrimary, fontWeight: "800", fontSize: 14, letterSpacing: 1 },
+  modeRow: {
+    flexDirection: "row", gap: 8, marginHorizontal: 20, marginTop: 10,
+  },
+  modeBtn: {
+    flex: 1, height: 38, alignItems: "center", justifyContent: "center",
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4, backgroundColor: colors.surface,
+  },
+  modeBtnActive: { backgroundColor: colors.morning, borderColor: colors.morning },
+  modeText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  modeTextActive: { color: colors.bg },
   sectionLabel: { color: colors.textMuted, fontSize: 10, letterSpacing: 2, fontWeight: "700", marginTop: 18, marginBottom: 10 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   statBox: {
@@ -270,8 +377,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 4, marginBottom: 4,
   },
   attDate: { color: colors.textPrimary, fontSize: 12, flex: 1 },
+  attTime: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
   attStatus: { fontSize: 10, fontWeight: "800", letterSpacing: 1, marginRight: 12 },
   attHours: { color: colors.morning, fontWeight: "800", fontSize: 12 },
+  summaryRow: {
+    flexDirection: "row", alignItems: "center", gap: 10, padding: 12, marginBottom: 6,
+    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+  },
+  summaryName: { color: colors.textPrimary, fontSize: 13, fontWeight: "800" },
+  summaryMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 3 },
+  summaryHours: { color: colors.morning, fontSize: 14, fontWeight: "800" },
+  emptyBox: {
+    alignItems: "center", justifyContent: "center", padding: 34,
+    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 6,
+  },
+  emptyText: { color: colors.textMuted, fontSize: 12, marginTop: 8 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,

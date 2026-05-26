@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
   RefreshControl, Modal, TextInput, Alert,
@@ -519,6 +519,7 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
 
 function UserEditModal({ user, onClose, onSaved }: any) {
   const [fullName, setFullName] = useState(user?.full_name || "");
+  const [password, setPassword] = useState("");
   const [shift, setShift] = useState(user?.default_shift || "morning");
   const [team, setTeam] = useState(user?.team || "");
   const [location, setLocation] = useState(user?.location || "warehouse");
@@ -527,12 +528,24 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   const [compOff, setCompOff] = useState(String(user?.comp_off_balance ?? 0));
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!user) return;
+    setFullName(user.full_name || "");
+    setPassword("");
+    setShift(user.default_shift || "morning");
+    setTeam(user.team || "");
+    setLocation(user.location || "warehouse");
+    setAnnual(String(user.annual_leave_balance ?? 30));
+    setSick(String(user.sick_leave_balance ?? 12));
+    setCompOff(String(user.comp_off_balance ?? 0));
+  }, [user]);
+
   if (!user) return null;
 
   const save = async () => {
     setSaving(true);
     try {
-      await api.patch(`/users/${user.id}`, {
+      const payload: any = {
         full_name: fullName,
         default_shift: shift,
         team: team || null,
@@ -540,7 +553,17 @@ function UserEditModal({ user, onClose, onSaved }: any) {
         annual_leave_balance: parseFloat(annual) || 0,
         sick_leave_balance: parseFloat(sick) || 0,
         comp_off_balance: parseFloat(compOff) || 0,
-      });
+      };
+      if (password.trim()) {
+        if (password.trim().length < 6) {
+          Alert.alert("Password too short", "Use at least 6 characters.");
+          setSaving(false);
+          return;
+        }
+        payload.password = password.trim();
+      }
+      await api.patch(`/users/${user.id}`, payload);
+      setPassword("");
       onSaved();
     } catch (e) {
       Alert.alert("Error", errMsg(e));
@@ -575,6 +598,17 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             style={styles.modalInput}
             placeholder="Employee name"
             placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.modalLabel}>New Login Password</Text>
+          <TextInput
+            testID="edit-password"
+            value={password}
+            onChangeText={setPassword}
+            style={styles.modalInput}
+            placeholder="Leave blank to keep current password"
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
           />
 
           <Text style={styles.modalLabel}>Default Shift</Text>
