@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: warehouse-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: warehouse_db
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: SEED_MANAGER_EMAIL
+        value: manager@warehouse.com
+      - key: SEED_MANAGER_PASSWORD
+        sync: false
+      - key: SEED_ASST_EMAIL
+        value: asst@warehouse.com
+      - key: SEED_ASST_PASSWORD
+        sync: false
+      - key: SEED_DC_EMAIL
+        value: dc@warehouse.com
+      - key: SEED_DC_PASSWORD
+        sync: false
+
+  - type: web
+    name: warehouse-web
+    runtime: static
+    rootDir: frontend
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npx expo export --platform web
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: EXPO_PUBLIC_BACKEND_URL
+        fromService:
+          type: web
+          name: warehouse-api
+          property: host

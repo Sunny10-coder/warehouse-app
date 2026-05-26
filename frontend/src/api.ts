@@ -1,7 +1,10 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 import { storage } from "@/src/utils/storage";
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const RAW_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+const BASE_URL = RAW_BASE_URL && !RAW_BASE_URL.startsWith("http")
+  ? `https://${RAW_BASE_URL}`
+  : RAW_BASE_URL;
 const TOKEN_KEY = "wh_access_token";
 
 export const api: AxiosInstance = axios.create({
