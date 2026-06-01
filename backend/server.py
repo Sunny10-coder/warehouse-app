@@ -167,6 +167,25 @@ class UserUpdate(BaseModel):
     comp_off_balance: Optional[float] = None
 
 
+class CompOffGrant(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_name: str
+    earned_date: str
+    overtime_hours: float = 0
+    days: float
+    reason: str
+    granted_by: str
+    granted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CompOffGrantCreate(BaseModel):
+    earned_date: str
+    overtime_hours: float = 0
+    days: float
+    reason: str
+
+
 class ScheduleEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -259,6 +278,7 @@ async def lifespan(app: FastAPI):
     await db.users.create_index("email", unique=True)
     await db.schedules.create_index([("user_id", 1), ("shift_date", 1)], unique=True)
     await db.attendance.create_index([("user_id", 1), ("attendance_date", 1)], unique=True)
+    await db.comp_off_grants.create_index([("user_id", 1), ("earned_date", -1)])
 
     await _seed_initial_users(db)
     logger.info("Warehouse API ready")
@@ -523,6 +543,61 @@ async def update_user(user_id: str, payload: UserUpdate, admin: dict = Depends(r
     return _user_public(res)
 
 
+@app.post("/api/users/{user_id}/comp-off", response_model=CompOffGrant)
+async def grant_comp_off(
+    user_id: str,
+    payload: CompOffGrantCreate,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    if payload.days <= 0:
+        raise HTTPException(status_code=400, detail="Comp-off days must be greater than zero")
+    if payload.overtime_hours < 0:
+        raise HTTPException(status_code=400, detail="Overtime hours cannot be negative")
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Reason is required")
+    try:
+        date.fromisoformat(payload.earned_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Earned date must be YYYY-MM-DD")
+
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    grant = CompOffGrant(
+        user_id=user_id,
+        user_name=target["full_name"],
+        earned_date=payload.earned_date,
+        overtime_hours=round(payload.overtime_hours, 2),
+        days=round(payload.days, 2),
+        reason=payload.reason.strip(),
+        granted_by=admin["full_name"],
+    )
+    await db.comp_off_grants.insert_one(grant.dict())
+    await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": grant.days}})
+    await realtime.broadcast(
+        "users",
+        "comp_off_granted",
+        {"user_id": user_id, "days": grant.days, "earned_date": grant.earned_date},
+    )
+    await realtime.broadcast("reports", "comp_off_granted", {"user_id": user_id})
+    return grant
+
+
+@app.get("/api/users/{user_id}/comp-off", response_model=list[CompOffGrant])
+async def list_comp_off_grants(
+    user_id: str,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    docs = await db.comp_off_grants.find({"user_id": user_id}, {"_id": 0}).sort("earned_date", -1).to_list(100)
+    return [CompOffGrant(**d) for d in docs]
+
+
 @app.post("/api/users/{user_id}/approve", response_model=UserPublic)
 async def approve_user(user_id: str, admin: dict = Depends(require_admin), db=Depends(get_db)):
     res = await db.users.find_one_and_update(
@@ -571,6 +646,7 @@ async def delete_user(user_id: str, admin: dict = Depends(require_admin), db=Dep
     await db.attendance.delete_many({"user_id": user_id})
     await db.schedules.delete_many({"user_id": user_id})
     await db.leaves.delete_many({"user_id": user_id})
+    await db.comp_off_grants.delete_many({"user_id": user_id})
     await db.users.delete_one({"_id": user_id})
     await realtime.broadcast("users", "deleted", {"user_id": user_id})
     await realtime.broadcast("all", "user_data_deleted", {"user_id": user_id})

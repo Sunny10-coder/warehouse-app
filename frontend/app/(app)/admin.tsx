@@ -15,6 +15,13 @@ const SHIFT_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "off"];
 
 type Tab = "leaves" | "users" | "schedule";
 
+function localDateString() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 export default function Admin() {
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<Tab>("leaves");
@@ -535,6 +542,11 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   const [sick, setSick] = useState(String(user?.sick_leave_balance ?? 12));
   const [compOff, setCompOff] = useState(String(user?.comp_off_balance ?? 0));
   const [saving, setSaving] = useState(false);
+  const [overtimeDate, setOvertimeDate] = useState(localDateString());
+  const [overtimeHours, setOvertimeHours] = useState("");
+  const [overtimeDays, setOvertimeDays] = useState("");
+  const [overtimeReason, setOvertimeReason] = useState("");
+  const [grantingCompOff, setGrantingCompOff] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -547,6 +559,10 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     setAnnual(String(user.annual_leave_balance ?? 30));
     setSick(String(user.sick_leave_balance ?? 12));
     setCompOff(String(user.comp_off_balance ?? 0));
+    setOvertimeDate(localDateString());
+    setOvertimeHours("");
+    setOvertimeDays("");
+    setOvertimeReason("");
   }, [user]);
 
   if (!user) return null;
@@ -591,6 +607,46 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     const setter = which === "annual" ? setAnnual : which === "sick" ? setSick : setCompOff;
     const next = Math.max(0, (parseFloat(current) || 0) + delta);
     setter(String(next));
+  };
+
+  const grantCompOff = async () => {
+    const days = parseFloat(overtimeDays);
+    const hours = parseFloat(overtimeHours) || 0;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(overtimeDate.trim())) {
+      Alert.alert("Invalid date", "Use YYYY-MM-DD for the overtime worked date.");
+      return;
+    }
+    if (!days || days <= 0) {
+      Alert.alert("Required", "Enter the comp-off days to add.");
+      return;
+    }
+    if (hours < 0) {
+      Alert.alert("Invalid hours", "Overtime hours cannot be negative.");
+      return;
+    }
+    if (!overtimeReason.trim()) {
+      Alert.alert("Required", "Enter why this comp off is being added.");
+      return;
+    }
+    setGrantingCompOff(true);
+    try {
+      await api.post(`/users/${user.id}/comp-off`, {
+        earned_date: overtimeDate.trim(),
+        overtime_hours: hours,
+        days,
+        reason: overtimeReason.trim(),
+      });
+      const next = Math.round(((parseFloat(compOff) || 0) + days) * 100) / 100;
+      setCompOff(String(next));
+      setOvertimeHours("");
+      setOvertimeDays("");
+      setOvertimeReason("");
+      Alert.alert("Comp off added", `${days} day${days === 1 ? "" : "s"} added for overtime.`);
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setGrantingCompOff(false);
+    }
   };
 
   return (
@@ -689,6 +745,60 @@ function UserEditModal({ user, onClose, onSaved }: any) {
           <BalanceEditor testID="balance-annual" label="Annual" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d: number) => adjustBalance("annual", d)} />
           <BalanceEditor testID="balance-sick" label="Sick" color={colors.sick} value={sick} setValue={setSick} onAdjust={(d: number) => adjustBalance("sick", d)} />
           <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d: number) => adjustBalance("comp_off", d)} />
+
+          <View style={styles.overtimeBox}>
+            <Text style={styles.overtimeTitle}>ADD COMP OFF FOR OVERTIME</Text>
+            <View style={styles.overtimeGrid}>
+              <TextInput
+                testID="comp-off-earned-date"
+                value={overtimeDate}
+                onChangeText={setOvertimeDate}
+                style={styles.overtimeInput}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                testID="comp-off-hours"
+                value={overtimeHours}
+                onChangeText={setOvertimeHours}
+                keyboardType="decimal-pad"
+                style={styles.overtimeInput}
+                placeholder="Overtime hours"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                testID="comp-off-days"
+                value={overtimeDays}
+                onChangeText={setOvertimeDays}
+                keyboardType="decimal-pad"
+                style={styles.overtimeInput}
+                placeholder="Days to add"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+            <TextInput
+              testID="comp-off-reason"
+              value={overtimeReason}
+              onChangeText={setOvertimeReason}
+              style={styles.overtimeReason}
+              placeholder="Reason / overtime work done"
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+            <TouchableOpacity
+              testID="comp-off-grant-submit"
+              style={[styles.grantBtn, grantingCompOff && { opacity: 0.6 }]}
+              onPress={grantCompOff}
+              disabled={grantingCompOff}
+            >
+              {grantingCompOff ? <ActivityIndicator color={colors.bg} /> : (
+                <>
+                  <Ionicons name="add-circle" size={16} color={colors.bg} />
+                  <Text style={styles.grantBtnText}>ADD OVERTIME COMP OFF</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             testID="user-save"
@@ -833,4 +943,25 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
     alignItems: "center", justifyContent: "center", backgroundColor: colors.surface,
   },
+  overtimeBox: {
+    marginTop: 12, padding: 12, borderWidth: 1, borderRadius: 4,
+    borderColor: colors.compOff, backgroundColor: colors.surfaceHi,
+  },
+  overtimeTitle: { color: colors.compOff, fontSize: 11, fontWeight: "800", letterSpacing: 1, marginBottom: 10 },
+  overtimeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  overtimeInput: {
+    flexGrow: 1, minWidth: 132, height: 44, backgroundColor: colors.surface,
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    color: colors.textPrimary, paddingHorizontal: 12, fontSize: 13,
+  },
+  overtimeReason: {
+    minHeight: 76, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
+    borderRadius: 4, color: colors.textPrimary, paddingHorizontal: 12, paddingTop: 10,
+    marginTop: 8, textAlignVertical: "top",
+  },
+  grantBtn: {
+    height: 44, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, borderRadius: 4, backgroundColor: colors.compOff, marginTop: 10,
+  },
+  grantBtnText: { color: colors.bg, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
 });
