@@ -46,15 +46,16 @@ export default function Attendance() {
   })();
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     try {
       const today = todayStr();
       const [att, sched] = await Promise.all([
-        api.get("/attendance", { params: { start_date: monthStart, end_date: today } }),
+        api.get("/attendance", { params: { start_date: monthStart, end_date: today, user_id: user.id } }),
         api.get("/schedules", { params: { start_date: today, end_date: today, user_id: user?.id } }),
       ]);
       setRecords(att.data);
-      setTodaySched(sched.data[0] || null);
-      setTodayMarked(att.data.find((a: any) => a.attendance_date === today) || null);
+      setTodaySched(sched.data.find((s: any) => s.user_id === user.id) || sched.data[0] || null);
+      setTodayMarked(att.data.find((a: any) => a.user_id === user.id && a.attendance_date === today) || null);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -142,7 +143,7 @@ export default function Attendance() {
   const totalHours = records.reduce((s, r) => s + (r.hours_worked || 0), 0);
   const presentCount = records.filter(r => r.status === "present").length;
   const canClockIn = !todayMarked?.clock_in;
-  const canClockOut = !!todayMarked?.clock_in && !todayMarked?.clock_out;
+  const canClockOut = !todayMarked?.clock_out;
 
   const sc = shiftColor(todaySched?.shift_type);
 
@@ -188,28 +189,24 @@ export default function Attendance() {
             <Text style={styles.unmarkedText}>Not marked yet</Text>
           )}
           <View style={styles.actionsRow}>
-            {canClockIn && (
-              <TouchableOpacity
-                testID="attendance-clock-in-now"
-                style={[styles.actionBtn, { backgroundColor: colors.morning }]}
-                onPress={clockInNow}
-                disabled={submitting}
-              >
-                <Ionicons name="enter" size={18} color={colors.bg} />
-                <Text style={styles.actionBtnText}>CLOCK IN</Text>
-              </TouchableOpacity>
-            )}
-            {canClockOut && (
-              <TouchableOpacity
-                testID="attendance-clock-out-now"
-                style={[styles.actionBtn, { backgroundColor: colors.danger }]}
-                onPress={clockOutNow}
-                disabled={submitting}
-              >
-                <Ionicons name="exit" size={18} color={colors.bg} />
-                <Text style={styles.actionBtnText}>CLOCK OUT</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              testID="attendance-clock-in-now"
+              style={[styles.actionBtn, { backgroundColor: colors.morning }, (!canClockIn || submitting) && styles.actionBtnDisabled]}
+              onPress={clockInNow}
+              disabled={!canClockIn || submitting}
+            >
+              <Ionicons name="enter" size={18} color={colors.bg} />
+              <Text style={styles.actionBtnText}>CLOCK IN</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="attendance-clock-out-now"
+              style={[styles.actionBtn, { backgroundColor: colors.danger }, (!canClockOut || submitting) && styles.actionBtnDisabled]}
+              onPress={clockOutNow}
+              disabled={!canClockOut || submitting}
+            >
+              <Ionicons name="exit" size={18} color={colors.bg} />
+              <Text style={styles.actionBtnText}>CLOCK OUT</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.actionsRow}>
             <TouchableOpacity
@@ -360,11 +357,12 @@ const styles = StyleSheet.create({
   },
   scheduledLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 1, color: colors.textSecondary },
   scheduledTime: { color: colors.textPrimary, fontSize: 18, fontWeight: "700", marginTop: 4 },
-  actionsRow: { flexDirection: "row", gap: 8, marginTop: 16 },
+  actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 16 },
   actionBtn: {
-    flex: 1, height: 44, borderRadius: 4, flexDirection: "row",
+    flexGrow: 1, minWidth: 112, height: 44, borderRadius: 4, flexDirection: "row",
     alignItems: "center", justifyContent: "center", gap: 6,
   },
+  actionBtnDisabled: { opacity: 0.45 },
   actionBtnText: { color: colors.bg, fontWeight: "800", letterSpacing: 1, fontSize: 12 },
   markedBox: {
     flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14,
