@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any, Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -39,6 +40,7 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET_KEY = os.environ["JWT_SECRET_KEY"]
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
+APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "Asia/Dubai")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("warehouse")
@@ -73,6 +75,14 @@ SHIFT_TIMES = {
     "off": ("", ""),
     "leave": ("", ""),
 }
+
+
+def local_now() -> datetime:
+    return datetime.now(ZoneInfo(APP_TIMEZONE))
+
+
+def local_today_str() -> str:
+    return local_now().date().isoformat()
 
 
 class RealtimeHub:
@@ -814,9 +824,9 @@ async def mark_attendance(
 @app.post("/api/attendance/clock-in", response_model=AttendanceMark)
 async def clock_in_now(user: dict = Depends(get_current_user), db=Depends(get_db)):
     """Record current time as clock-in for today."""
-    now_str = datetime.now().strftime("%H:%M")
+    now_str = local_now().strftime("%H:%M")
     payload = AttendanceCreate(
-        attendance_date=date.today().isoformat(),
+        attendance_date=local_today_str(),
         status="present",
         clock_in=now_str,
     )
@@ -826,9 +836,9 @@ async def clock_in_now(user: dict = Depends(get_current_user), db=Depends(get_db
 @app.post("/api/attendance/clock-out", response_model=AttendanceMark)
 async def clock_out_now(user: dict = Depends(get_current_user), db=Depends(get_db)):
     """Record current time as clock-out for today (hours auto-computed)."""
-    now_str = datetime.now().strftime("%H:%M")
+    now_str = local_now().strftime("%H:%M")
     payload = AttendanceCreate(
-        attendance_date=date.today().isoformat(),
+        attendance_date=local_today_str(),
         status="present",
         clock_out=now_str,
     )
@@ -1185,6 +1195,8 @@ async def calendar_month(
                                        "sat_day", "sat_night", "sun_day", "sun_night", "off", "leave"]},
             "leaves": [],
             "attendance": [],
+            "roster": [],
+            "roster_summary": {"scheduled": 0, "finished": 0, "clocked_in": 0, "marked": 0, "missing": 0},
             "attendance_summary": {"present": 0, "late": 0, "absent": 0, "half_day": 0, "total": 0},
             "coverage": {"morning": 0, "afternoon": 0, "night": 0},
             "status": "ok",
@@ -1253,6 +1265,78 @@ async def calendar_month(
         days[d]["attendance_summary"]["total"] += 1
         if status_value in attendance_statuses:
             days[d]["attendance_summary"][status_value] += 1
+
+    attendance_by_day_user = {
+        (rec.get("attendance_date"), rec.get("user_id")): rec
+        for rec in attendance
+    }
+    scheduled_by_day_user: set[tuple[str, str]] = set()
+    for s in schedules:
+        d = s["shift_date"]
+        uid = s["user_id"]
+        if d not in days:
+            continue
+        scheduled_by_day_user.add((d, uid))
+        rec = attendance_by_day_user.get((d, uid))
+        has_in = bool(rec and rec.get("clock_in"))
+        has_out = bool(rec and rec.get("clock_out"))
+        if rec and rec.get("status") == "absent":
+            log_state = "absent"
+        elif has_in and has_out:
+            log_state = "finished"
+        elif has_in:
+            log_state = "clocked_in"
+        elif rec:
+            log_state = "marked"
+        else:
+            log_state = "missing"
+        days[d]["roster"].append({
+            "user_id": uid,
+            "user_name": s.get("user_name", ""),
+            "shift_type": s.get("shift_type"),
+            "start_time": s.get("start_time", ""),
+            "end_time": s.get("end_time", ""),
+            "scheduled_hours": s.get("hours", 0),
+            "attendance_status": rec.get("status") if rec else None,
+            "clock_in": rec.get("clock_in") if rec else None,
+            "clock_out": rec.get("clock_out") if rec else None,
+            "hours_worked": rec.get("hours_worked", 0) if rec else 0,
+            "log_state": log_state,
+        })
+        days[d]["roster_summary"]["scheduled"] += 1
+        if log_state in days[d]["roster_summary"]:
+            days[d]["roster_summary"][log_state] += 1
+
+    # Include unscheduled attendance too, so manual/admin logs are not invisible.
+    for rec in attendance:
+        d = rec["attendance_date"]
+        uid = rec["user_id"]
+        if d not in days or (d, uid) in scheduled_by_day_user:
+            continue
+        has_in = bool(rec.get("clock_in"))
+        has_out = bool(rec.get("clock_out"))
+        log_state = "finished" if has_in and has_out else "clocked_in" if has_in else "marked"
+        days[d]["roster"].append({
+            "user_id": uid,
+            "user_name": rec.get("user_name", ""),
+            "shift_type": rec.get("shift_type") or "unscheduled",
+            "start_time": "",
+            "end_time": "",
+            "scheduled_hours": 0,
+            "attendance_status": rec.get("status"),
+            "clock_in": rec.get("clock_in"),
+            "clock_out": rec.get("clock_out"),
+            "hours_worked": rec.get("hours_worked", 0),
+            "log_state": log_state,
+        })
+        if log_state in days[d]["roster_summary"]:
+            days[d]["roster_summary"][log_state] += 1
+
+    for info in days.values():
+        info["roster"].sort(key=lambda row: (
+            row.get("start_time") or "99:99",
+            row.get("user_name") or "",
+        ))
 
     # Compute status per day (only count weekdays mon-fri for strict critical)
     monthly_critical = 0

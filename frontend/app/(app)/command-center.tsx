@@ -27,6 +27,20 @@ type DayCell = {
     hours_worked: number;
     shift_type?: string | null;
   }[];
+  roster: {
+    user_id: string;
+    user_name: string;
+    shift_type?: string | null;
+    start_time: string;
+    end_time: string;
+    scheduled_hours: number;
+    attendance_status?: string | null;
+    clock_in?: string | null;
+    clock_out?: string | null;
+    hours_worked: number;
+    log_state: "missing" | "marked" | "clocked_in" | "finished" | "absent";
+  }[];
+  roster_summary: { scheduled: number; finished: number; clocked_in: number; marked: number; missing: number };
   attendance_summary: { present: number; late: number; absent: number; half_day: number; total: number };
   coverage: { morning: number; afternoon: number; night: number };
   status: "ok" | "warn" | "critical";
@@ -193,6 +207,12 @@ export default function CommandCenter() {
                       <Text style={styles.cellAttendanceCount}>{cell.attendance_summary.total}</Text>
                     </View>
                   )}
+                  {cell.roster_summary?.missing > 0 && (
+                    <View style={styles.cellMissingDot}>
+                      <Ionicons name="alert-circle" size={8} color={colors.danger} />
+                      <Text style={styles.cellMissingCount}>{cell.roster_summary.missing}</Text>
+                    </View>
+                  )}
                   {isCritical && (
                     <View style={styles.criticalBadge}>
                       <Ionicons name="warning" size={10} color="#fff" />
@@ -239,7 +259,44 @@ export default function CommandCenter() {
                   <CoverageItem label="Night" count={selectedDay.coverage.night} min={2} color={colors.night} />
                 </View>
 
-                {/* Leaves */}
+                {/* Combined roster log */}
+                {selectedDay.roster?.length > 0 && (
+                  <>
+                    <Text style={[styles.modalSection, { color: colors.morning }]}>
+                      STAFF SHIFT LOG ({selectedDay.roster.length})
+                    </Text>
+                    <View style={styles.rosterSummaryRow}>
+                      <RosterSummary label="Finished" value={selectedDay.roster_summary.finished} color={colors.success} />
+                      <RosterSummary label="In" value={selectedDay.roster_summary.clocked_in} color={colors.morning} />
+                      <RosterSummary label="Marked" value={selectedDay.roster_summary.marked} color={colors.warning} />
+                      <RosterSummary label="Missing" value={selectedDay.roster_summary.missing} color={colors.danger} />
+                    </View>
+                    {selectedDay.roster.map((row, i) => {
+                      const state = rosterState(row);
+                      const sc = shiftColor(row.shift_type || "");
+                      return (
+                        <View key={`${row.user_id}-${row.shift_type}-${i}`} style={[styles.rosterRow, { borderLeftColor: state.color }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.entryName}>{row.user_name}</Text>
+                            <Text style={[styles.entryShift, { color: sc.c }]}>
+                              {shiftLabel[row.shift_type || ""] || row.shift_type || "Unscheduled"}
+                              {row.start_time ? ` · ${row.start_time}-${row.end_time}` : ""}
+                            </Text>
+                            <Text style={styles.entryTime}>
+                              Logged: {row.clock_in || "--"} - {row.clock_out || "--"}
+                              {row.hours_worked ? ` · ${row.hours_worked}h` : ""}
+                            </Text>
+                          </View>
+                          <View style={[styles.logPill, { borderColor: state.color }]}>
+                            <Text style={[styles.logPillText, { color: state.color }]}>{state.label}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* Attendance */}
                 {selectedDay.attendance.length > 0 && (
                   <>
                     <Text style={[styles.modalSection, { color: colors.success }]}>
@@ -338,6 +395,23 @@ export default function CommandCenter() {
   );
 }
 
+function rosterState(row: DayCell["roster"][number]) {
+  if (row.log_state === "finished") return { label: "FINISHED", color: colors.success };
+  if (row.log_state === "clocked_in") return { label: "CLOCKED IN", color: colors.morning };
+  if (row.log_state === "absent") return { label: "ABSENT", color: colors.danger };
+  if (row.log_state === "marked") return { label: (row.attendance_status || "MARKED").toUpperCase(), color: colors.warning };
+  return { label: "NOT LOGGED", color: colors.danger };
+}
+
+function RosterSummary({ label, value, color }: any) {
+  return (
+    <View style={styles.rosterSummaryItem}>
+      <Text style={[styles.rosterSummaryValue, { color }]}>{value}</Text>
+      <Text style={styles.rosterSummaryLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function CompareCell({ icon, label, value, color }: any) {
   return (
     <View style={styles.compareCell} testID={`cc-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
@@ -428,6 +502,10 @@ const styles = StyleSheet.create({
     position: "absolute", top: 16, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
   },
   cellAttendanceCount: { color: colors.success, fontSize: 8, fontWeight: "800" },
+  cellMissingDot: {
+    position: "absolute", top: 29, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
+  },
+  cellMissingCount: { color: colors.danger, fontSize: 8, fontWeight: "800" },
   criticalBadge: {
     position: "absolute", bottom: 2, right: 2, width: 14, height: 14,
     backgroundColor: colors.danger, borderRadius: 7, alignItems: "center", justifyContent: "center",
@@ -463,6 +541,19 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", padding: 10, marginBottom: 6,
     backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 3, borderRadius: 4,
   },
+  rosterSummaryRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  rosterSummaryItem: {
+    flex: 1, alignItems: "center", paddingVertical: 8,
+    backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+  },
+  rosterSummaryValue: { fontSize: 16, fontWeight: "800" },
+  rosterSummaryLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: "700", marginTop: 2 },
+  rosterRow: {
+    flexDirection: "row", alignItems: "center", padding: 10, marginBottom: 6,
+    backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 3, borderRadius: 4,
+  },
+  logPill: { paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderRadius: 2, marginLeft: 8 },
+  logPillText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
   entryName: { color: colors.textPrimary, fontSize: 13, fontWeight: "700" },
   entryShift: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   entryTime: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },

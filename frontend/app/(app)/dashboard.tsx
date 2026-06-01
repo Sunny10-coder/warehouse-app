@@ -145,8 +145,8 @@ export default function Dashboard() {
           style={styles.commandBtn}
           onPress={() => router.push("/(app)/command-center")}
         >
-          <Ionicons name="grid" size={18} color={colors.bg} />
-          <Text style={styles.commandBtnText}>OPEN COMMAND CENTER</Text>
+          <Ionicons name="calendar" size={18} color={colors.bg} />
+          <Text style={styles.commandBtnText}>ATTENDANCE CALENDAR</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.bg} />
         </TouchableOpacity>
 

@@ -41,8 +41,8 @@ export default function Attendance() {
   const [submitting, setSubmitting] = useState(false);
 
   const monthStart = (() => {
-    const d = new Date(); d.setDate(1);
-    return d.toISOString().slice(0, 10);
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
   })();
 
   const load = useCallback(async () => {
