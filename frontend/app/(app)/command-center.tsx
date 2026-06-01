@@ -18,6 +18,16 @@ type DayCell = {
   weekday: number;
   shifts: Record<string, { user_id: string; user_name: string; start_time: string; end_time: string }[]>;
   leaves: { user_id: string; user_name: string; leave_type: string; status: string }[];
+  attendance: {
+    user_id: string;
+    user_name: string;
+    status: string;
+    clock_in?: string | null;
+    clock_out?: string | null;
+    hours_worked: number;
+    shift_type?: string | null;
+  }[];
+  attendance_summary: { present: number; late: number; absent: number; half_day: number; total: number };
   coverage: { morning: number; afternoon: number; night: number };
   status: "ok" | "warn" | "critical";
 };
@@ -32,6 +42,7 @@ type CalendarData = {
     total_scheduled_hours: number;
     approved_leaves: number;
     pending_leaves: number;
+    marked_attendance: number;
     critical_days: number;
     warn_days: number;
   };
@@ -59,7 +70,7 @@ export default function CommandCenter() {
   }, [year, month]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  useRealtimeRefresh(load, ["schedules", "leaves", "users"]);
+  useRealtimeRefresh(load, ["schedules", "leaves", "users", "attendance"]);
 
   const monthLabel = useMemo(
     () => new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }),
@@ -120,7 +131,7 @@ export default function CommandCenter() {
               <CompareCell icon="layers" label="Shift Entries" value={data.summary.total_scheduled_entries} color={colors.night} />
               <CompareCell icon="airplane" label="Approved Leaves" value={data.summary.approved_leaves} color={colors.success} />
               <CompareCell icon="hourglass" label="Pending Leaves" value={data.summary.pending_leaves} color={colors.warning} />
-              <CompareCell icon="alert-circle" label="Critical Days" value={data.summary.critical_days} color={colors.danger} />
+              <CompareCell icon="reader" label="Marked Attendance" value={data.summary.marked_attendance} color={colors.success} />
             </View>
             <View style={styles.minRow}>
               <Text style={styles.minTxt}>
@@ -176,6 +187,12 @@ export default function CommandCenter() {
                       <Text style={styles.cellLeaveCount}>{cell.leaves.length}</Text>
                     </View>
                   )}
+                  {cell.attendance_summary.total > 0 && (
+                    <View style={styles.cellAttendanceDot}>
+                      <Ionicons name="checkmark-done" size={8} color={colors.success} />
+                      <Text style={styles.cellAttendanceCount}>{cell.attendance_summary.total}</Text>
+                    </View>
+                  )}
                   {isCritical && (
                     <View style={styles.criticalBadge}>
                       <Ionicons name="warning" size={10} color="#fff" />
@@ -221,6 +238,35 @@ export default function CommandCenter() {
                   <CoverageItem label="Afternoon" count={selectedDay.coverage.afternoon} min={2} color={colors.afternoon} />
                   <CoverageItem label="Night" count={selectedDay.coverage.night} min={2} color={colors.night} />
                 </View>
+
+                {/* Leaves */}
+                {selectedDay.attendance.length > 0 && (
+                  <>
+                    <Text style={[styles.modalSection, { color: colors.success }]}>
+                      ATTENDANCE LOG ({selectedDay.attendance.length})
+                    </Text>
+                    {selectedDay.attendance.map((att, i) => {
+                      const statusColor =
+                        att.status === "present" ? colors.success
+                          : att.status === "late" ? colors.warning
+                          : att.status === "absent" ? colors.danger : colors.textSecondary;
+                      return (
+                        <View key={`${att.user_id}-${i}`} style={[styles.attendanceRow, { borderLeftColor: statusColor }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.entryName}>{att.user_name}</Text>
+                            <Text style={[styles.entryShift, { color: statusColor }]}>
+                              {att.status.toUpperCase()} · {att.hours_worked || 0}h
+                            </Text>
+                            {(att.clock_in || att.clock_out) && (
+                              <Text style={styles.entryTime}>{att.clock_in || "--"} - {att.clock_out || "--"}</Text>
+                            )}
+                          </View>
+                          <Ionicons name="checkmark-done" size={16} color={statusColor} />
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
 
                 {/* Leaves */}
                 {selectedDay.leaves.length > 0 && (
@@ -378,6 +424,10 @@ const styles = StyleSheet.create({
     position: "absolute", top: 3, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
   },
   cellLeaveCount: { color: colors.leave, fontSize: 8, fontWeight: "800" },
+  cellAttendanceDot: {
+    position: "absolute", top: 16, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
+  },
+  cellAttendanceCount: { color: colors.success, fontSize: 8, fontWeight: "800" },
   criticalBadge: {
     position: "absolute", bottom: 2, right: 2, width: 14, height: 14,
     backgroundColor: colors.danger, borderRadius: 7, alignItems: "center", justifyContent: "center",
@@ -406,6 +456,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 3, borderRadius: 4,
   },
   leaveRow: {
+    flexDirection: "row", alignItems: "center", padding: 10, marginBottom: 6,
+    backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 3, borderRadius: 4,
+  },
+  attendanceRow: {
     flexDirection: "row", alignItems: "center", padding: 10, marginBottom: 6,
     backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 3, borderRadius: 4,
   },

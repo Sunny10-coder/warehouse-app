@@ -1170,6 +1170,9 @@ async def calendar_month(
             {"status": {"$in": ["approved", "pending"]}},
         ]
     }, {"_id": 0}).to_list(500)
+    attendance = await db.attendance.find(
+        {"attendance_date": {"$gte": start_str, "$lte": end_str}}, {"_id": 0}
+    ).sort([("attendance_date", 1), ("user_name", 1)]).to_list(10000)
 
     days: dict[str, dict] = {}
     cursor = start
@@ -1181,6 +1184,8 @@ async def calendar_month(
             "shifts": {k: [] for k in ["morning", "afternoon", "night", "admin", "ega",
                                        "sat_day", "sat_night", "sun_day", "sun_night", "off", "leave"]},
             "leaves": [],
+            "attendance": [],
+            "attendance_summary": {"present": 0, "late": 0, "absent": 0, "half_day": 0, "total": 0},
             "coverage": {"morning": 0, "afternoon": 0, "night": 0},
             "status": "ok",
         }
@@ -1229,6 +1234,26 @@ async def calendar_month(
                                     break
             cur += timedelta(days=1)
 
+    # Bucket attendance by marked date so the command center reflects real logs.
+    attendance_statuses = {"present", "late", "absent", "half_day"}
+    for rec in attendance:
+        d = rec["attendance_date"]
+        if d not in days:
+            continue
+        status_value = rec.get("status", "")
+        days[d]["attendance"].append({
+            "user_id": rec["user_id"],
+            "user_name": rec.get("user_name", ""),
+            "status": status_value,
+            "clock_in": rec.get("clock_in"),
+            "clock_out": rec.get("clock_out"),
+            "hours_worked": rec.get("hours_worked", 0),
+            "shift_type": rec.get("shift_type"),
+        })
+        days[d]["attendance_summary"]["total"] += 1
+        if status_value in attendance_statuses:
+            days[d]["attendance_summary"][status_value] += 1
+
     # Compute status per day (only count weekdays mon-fri for strict critical)
     monthly_critical = 0
     monthly_warn = 0
@@ -1263,6 +1288,7 @@ async def calendar_month(
     active_users_count = await db.users.count_documents({"status": "active"})
     approved_leaves_total = sum(1 for lv in leaves if lv["status"] == "approved")
     pending_leaves_total = sum(1 for lv in leaves if lv["status"] == "pending")
+    marked_attendance_total = len(attendance)
 
     return {
         "range": {"start_date": start_str, "end_date": end_str, "year": year, "month": month},
@@ -1274,6 +1300,7 @@ async def calendar_month(
             "total_scheduled_hours": round(total_scheduled_hours, 2),
             "approved_leaves": approved_leaves_total,
             "pending_leaves": pending_leaves_total,
+            "marked_attendance": marked_attendance_total,
             "critical_days": monthly_critical,
             "warn_days": monthly_warn,
         },

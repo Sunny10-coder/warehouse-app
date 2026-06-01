@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert,
+  RefreshControl, Modal, TextInput, Alert, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
+import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveLabel, leaveColor, roleLabel, shiftLabel } from "@/src/theme";
 
@@ -15,6 +16,7 @@ const SHIFT_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "off"];
 type Tab = "leaves" | "users" | "schedule";
 
 export default function Admin() {
+  const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<Tab>("leaves");
   const [users, setUsers] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
@@ -61,26 +63,29 @@ export default function Admin() {
     }
   };
 
+  const runDeleteUser = async (u: any) => {
+    try {
+      await api.delete(`/users/${u.id}`);
+      setUsers(current => current.filter(user => user.id !== u.id));
+      await load();
+      Alert.alert("Deleted", `${u.full_name} was removed.`);
+    } catch (e) {
+      Alert.alert("Delete failed", errMsg(e));
+    }
+  };
+
   const deleteUser = (u: any) => {
-    Alert.alert(
-      "Delete staff login",
-      `Delete ${u.full_name}? This removes their account plus their schedule, attendance, and leave records.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.delete(`/users/${u.id}`);
-              await load();
-            } catch (e) {
-              Alert.alert("Error", errMsg(e));
-            }
-          },
-        },
-      ],
-    );
+    const message = `Delete ${u.full_name}? This removes their account plus their schedule, attendance, and leave records.`;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm(message)) {
+        runDeleteUser(u);
+      }
+      return;
+    }
+    Alert.alert("Delete staff login", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => runDeleteUser(u) },
+    ]);
   };
 
   const resetOperationalData = () => {
@@ -252,16 +257,18 @@ export default function Admin() {
                   )}
                 </View>
                 <View style={styles.userActions}>
-                  <TouchableOpacity
-                    testID={`delete-user-${u.id}`}
-                    style={styles.deleteUserBtn}
-                    onPress={(event: any) => {
-                      event?.stopPropagation?.();
-                      deleteUser(u);
-                    }}
-                  >
-                    <Ionicons name="trash" size={16} color={colors.danger} />
-                  </TouchableOpacity>
+                  {u.id !== currentUser?.id && (
+                    <TouchableOpacity
+                      testID={`delete-user-${u.id}`}
+                      style={styles.deleteUserBtn}
+                      onPress={(event: any) => {
+                        event?.stopPropagation?.();
+                        deleteUser(u);
+                      }}
+                    >
+                      <Ionicons name="trash" size={16} color={colors.danger} />
+                    </TouchableOpacity>
+                  )}
                   <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </View>
               </TouchableOpacity>
