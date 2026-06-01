@@ -11,7 +11,22 @@ import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor } from "@/src/theme";
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function currentTimeStr() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function validTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
 
 export default function Attendance() {
   const { user } = useAuth();
@@ -65,7 +80,11 @@ export default function Attendance() {
   const clockInNow = async () => {
     setSubmitting(true);
     try {
-      await api.post("/attendance/clock-in");
+      await api.post("/attendance", {
+        attendance_date: todayStr(),
+        status: todayMarked?.status || "present",
+        clock_in: currentTimeStr(),
+      });
       await load();
     } catch (e) {
       Alert.alert("Error", errMsg(e));
@@ -77,7 +96,11 @@ export default function Attendance() {
   const clockOutNow = async () => {
     setSubmitting(true);
     try {
-      await api.post("/attendance/clock-out");
+      await api.post("/attendance", {
+        attendance_date: todayStr(),
+        status: todayMarked?.status || "present",
+        clock_out: currentTimeStr(),
+      });
       await load();
     } catch (e) {
       Alert.alert("Error", errMsg(e));
@@ -87,8 +110,14 @@ export default function Attendance() {
   };
 
   const submitClockInOut = async () => {
-    if (!clockIn || !clockOut) {
-      setError("Enter both clock in and clock out time (HH:MM)");
+    const inTime = clockIn.trim();
+    const outTime = clockOut.trim();
+    if (!inTime && !outTime) {
+      setError("Enter clock in or clock out time (HH:MM)");
+      return;
+    }
+    if ((inTime && !validTime(inTime)) || (outTime && !validTime(outTime))) {
+      setError("Use 24-hour HH:MM format, for example 07:30 or 16:45");
       return;
     }
     setError(null);
@@ -96,9 +125,9 @@ export default function Attendance() {
     try {
       await api.post("/attendance", {
         attendance_date: todayStr(),
-        status: "present",
-        clock_in: clockIn,
-        clock_out: clockOut,
+        status: todayMarked?.status || "present",
+        ...(inTime ? { clock_in: inTime } : {}),
+        ...(outTime ? { clock_out: outTime } : {}),
       });
       setShowModal(false);
       setClockIn(""); setClockOut("");
@@ -112,6 +141,8 @@ export default function Attendance() {
 
   const totalHours = records.reduce((s, r) => s + (r.hours_worked || 0), 0);
   const presentCount = records.filter(r => r.status === "present").length;
+  const canClockIn = !todayMarked?.clock_in;
+  const canClockOut = !!todayMarked?.clock_in && !todayMarked?.clock_out;
 
   const sc = shiftColor(todaySched?.shift_type);
 
@@ -152,62 +183,68 @@ export default function Attendance() {
                   </Text>
                 )}
               </View>
-              {todayMarked.clock_in && !todayMarked.clock_out && (
-                <TouchableOpacity
-                  testID="attendance-clock-out-now"
-                  style={styles.clockOutNowBtn}
-                  onPress={clockOutNow}
-                  disabled={submitting}
-                >
-                  <Ionicons name="exit" size={16} color={colors.bg} />
-                  <Text style={styles.clockOutNowText}>CLOCK OUT</Text>
-                </TouchableOpacity>
-              )}
             </View>
           ) : (
-            <>
-              <Text style={styles.unmarkedText}>Not marked yet</Text>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity
-                  testID="attendance-clock-in-now"
-                  style={[styles.actionBtn, { backgroundColor: colors.morning }]}
-                  onPress={clockInNow}
-                  disabled={submitting}
-                >
-                  <Ionicons name="enter" size={18} color={colors.bg} />
-                  <Text style={styles.actionBtnText}>CLOCK IN NOW</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity
-                  testID="attendance-mark-present"
-                  style={[styles.actionBtn, { backgroundColor: colors.success }]}
-                  onPress={() => quickMark("present")}
-                  disabled={submitting}
-                >
-                  <Ionicons name="checkmark" size={18} color={colors.bg} />
-                  <Text style={styles.actionBtnText}>PRESENT</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID="attendance-mark-late"
-                  style={[styles.actionBtn, { backgroundColor: colors.warning }]}
-                  onPress={() => quickMark("late")}
-                  disabled={submitting}
-                >
-                  <Ionicons name="time" size={18} color={colors.bg} />
-                  <Text style={styles.actionBtnText}>LATE</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID="attendance-clock-in-out"
-                  style={[styles.actionBtn, { backgroundColor: colors.textPrimary }]}
-                  onPress={() => setShowModal(true)}
-                >
-                  <Ionicons name="hourglass" size={16} color={colors.bg} />
-                  <Text style={styles.actionBtnText}>MANUAL</Text>
-                </TouchableOpacity>
-              </View>
-            </>
+            <Text style={styles.unmarkedText}>Not marked yet</Text>
           )}
+          <View style={styles.actionsRow}>
+            {canClockIn && (
+              <TouchableOpacity
+                testID="attendance-clock-in-now"
+                style={[styles.actionBtn, { backgroundColor: colors.morning }]}
+                onPress={clockInNow}
+                disabled={submitting}
+              >
+                <Ionicons name="enter" size={18} color={colors.bg} />
+                <Text style={styles.actionBtnText}>CLOCK IN</Text>
+              </TouchableOpacity>
+            )}
+            {canClockOut && (
+              <TouchableOpacity
+                testID="attendance-clock-out-now"
+                style={[styles.actionBtn, { backgroundColor: colors.danger }]}
+                onPress={clockOutNow}
+                disabled={submitting}
+              >
+                <Ionicons name="exit" size={18} color={colors.bg} />
+                <Text style={styles.actionBtnText}>CLOCK OUT</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              testID="attendance-mark-present"
+              style={[styles.actionBtn, { backgroundColor: colors.success }]}
+              onPress={() => quickMark("present")}
+              disabled={submitting}
+            >
+              <Ionicons name="checkmark" size={18} color={colors.bg} />
+              <Text style={styles.actionBtnText}>PRESENT</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="attendance-mark-late"
+              style={[styles.actionBtn, { backgroundColor: colors.warning }]}
+              onPress={() => quickMark("late")}
+              disabled={submitting}
+            >
+              <Ionicons name="time" size={18} color={colors.bg} />
+              <Text style={styles.actionBtnText}>LATE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="attendance-clock-in-out"
+              style={[styles.actionBtn, { backgroundColor: colors.textPrimary }]}
+              onPress={() => {
+                setError(null);
+                setClockIn("");
+                setClockOut("");
+                setShowModal(true);
+              }}
+              disabled={submitting}
+            >
+              <Ionicons name="hourglass" size={16} color={colors.bg} />
+              <Text style={styles.actionBtnText}>MANUAL</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Month stats */}
@@ -273,6 +310,7 @@ export default function Attendance() {
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+            <Text style={styles.modalHint}>Enter one or both times. Existing saved time stays unchanged if left blank.</Text>
             <Text style={styles.modalLabel}>Clock In (HH:MM)</Text>
             <TextInput
               testID="clock-in-input"
@@ -281,6 +319,8 @@ export default function Attendance() {
               onChangeText={setClockIn}
               placeholder="07:00"
               placeholderTextColor={colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
             />
             <Text style={styles.modalLabel}>Clock Out (HH:MM)</Text>
             <TextInput
@@ -290,6 +330,8 @@ export default function Attendance() {
               onChangeText={setClockOut}
               placeholder="16:00"
               placeholderTextColor={colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
             />
             {error && <Text style={{ color: colors.danger, fontSize: 12, marginBottom: 8 }}>{error}</Text>}
             <TouchableOpacity
@@ -332,11 +374,6 @@ const styles = StyleSheet.create({
   markedStatusBold: { color: colors.success, fontWeight: "800" },
   markedDetail: { color: colors.textPrimary, fontSize: 13, marginTop: 2 },
   unmarkedText: { color: colors.textSecondary, fontSize: 13, marginTop: 14 },
-  clockOutNowBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 4,
-  },
-  clockOutNowText: { color: colors.bg, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   statsRow: { flexDirection: "row", gap: 10 },
   statBox: {
     flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
@@ -364,6 +401,7 @@ const styles = StyleSheet.create({
   },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   modalTitle: { color: colors.textPrimary, fontWeight: "800", fontSize: 18 },
+  modalHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 14 },
   modalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 6 },
   modalInput: {
     height: 48, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
