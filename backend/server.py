@@ -1377,7 +1377,10 @@ async def calendar_month(
             "roster_summary": {"scheduled": 0, "finished": 0, "clocked_in": 0, "marked": 0, "missing": 0},
             "attendance_summary": {"present": 0, "late": 0, "absent": 0, "half_day": 0, "total": 0},
             "coverage": {"morning": 0, "afternoon": 0, "night": 0},
+            "coverage_if_pending_approved": {"morning": 0, "afternoon": 0, "night": 0},
+            "pending_leave_impact": {"morning": 0, "afternoon": 0, "night": 0},
             "status": "ok",
+            "pending_status": "ok",
         }
         cursor += timedelta(days=1)
 
@@ -1422,6 +1425,26 @@ async def calendar_month(
                                 if entry["user_id"] == lv["user_id"]:
                                     days[d]["coverage"][sk] = max(0, days[d]["coverage"][sk] - 1)
                                     break
+            cur += timedelta(days=1)
+
+    # Project coverage if pending leave requests are approved.
+    for info in days.values():
+        info["coverage_if_pending_approved"] = dict(info["coverage"])
+    for lv in leaves:
+        if lv["status"] != "pending":
+            continue
+        ls = max(start, datetime.strptime(lv["start_date"], "%Y-%m-%d").date())
+        le = min(end, datetime.strptime(lv["end_date"], "%Y-%m-%d").date())
+        cur = ls
+        while cur <= le:
+            d = cur.isoformat()
+            if d in days:
+                for sk in days[d]["coverage_if_pending_approved"].keys():
+                    for entry in days[d]["shifts"].get(sk, []):
+                        if entry["user_id"] == lv["user_id"]:
+                            days[d]["coverage_if_pending_approved"][sk] = max(0, days[d]["coverage_if_pending_approved"][sk] - 1)
+                            days[d]["pending_leave_impact"][sk] += 1
+                            break
             cur += timedelta(days=1)
 
     # Bucket attendance by marked date so the command center reflects real logs.
@@ -1540,6 +1563,18 @@ async def calendar_month(
                   or cov["night"] == COVERAGE_MIN["night"]):
                 info["status"] = "warn"
                 monthly_warn += 1
+            pending_cov = info["coverage_if_pending_approved"]
+            pending_below = (
+                pending_cov["morning"] < COVERAGE_MIN["morning"]
+                or pending_cov["afternoon"] < COVERAGE_MIN["afternoon"]
+                or pending_cov["night"] < COVERAGE_MIN["night"]
+            )
+            if pending_below:
+                info["pending_status"] = "critical"
+            elif (pending_cov["morning"] == COVERAGE_MIN["morning"]
+                  or pending_cov["afternoon"] == COVERAGE_MIN["afternoon"]
+                  or pending_cov["night"] == COVERAGE_MIN["night"]):
+                info["pending_status"] = "warn"
         else:
             # weekends: only flag if there's literally no coverage
             total_weekend = sum(cov.values())

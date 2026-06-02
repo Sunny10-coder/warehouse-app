@@ -43,7 +43,10 @@ type DayCell = {
   roster_summary: { scheduled: number; finished: number; clocked_in: number; marked: number; missing: number };
   attendance_summary: { present: number; late: number; absent: number; half_day: number; total: number };
   coverage: { morning: number; afternoon: number; night: number };
+  coverage_if_pending_approved: { morning: number; afternoon: number; night: number };
+  pending_leave_impact: { morning: number; afternoon: number; night: number };
   status: "ok" | "warn" | "critical";
+  pending_status: "ok" | "warn" | "critical";
 };
 
 type CalendarData = {
@@ -191,10 +194,16 @@ export default function CommandCenter() {
                 >
                   <Text style={[styles.cellDate, { color: isCritical ? colors.danger : colors.textPrimary }]}>{dayNum}</Text>
                   <View style={styles.cellRow}>
-                    <Text style={[styles.cellTinyNum, { color: colors.morning }]}>{cell.coverage.morning}</Text>
-                    <Text style={[styles.cellTinyNum, { color: colors.afternoon }]}>{cell.coverage.afternoon}</Text>
-                    <Text style={[styles.cellTinyNum, { color: colors.night }]}>{cell.coverage.night}</Text>
+                    <CoverageMini count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
+                    <CoverageMini count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
+                    <CoverageMini count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
                   </View>
+                  {cell.pending_status !== "ok" && (
+                    <View style={styles.pendingRiskDot}>
+                      <Ionicons name="hourglass" size={8} color={colors.warning} />
+                      <Text style={styles.pendingRiskText}>risk</Text>
+                    </View>
+                  )}
                   {cell.leaves.length > 0 && (
                     <View style={styles.cellLeaveDot}>
                       <Ionicons name="airplane" size={8} color={colors.leave} />
@@ -258,6 +267,17 @@ export default function CommandCenter() {
                   <CoverageItem label="Afternoon" count={selectedDay.coverage.afternoon} min={2} color={colors.afternoon} />
                   <CoverageItem label="Night" count={selectedDay.coverage.night} min={2} color={colors.night} />
                 </View>
+
+                {selectedDay.pending_status !== "ok" && (
+                  <>
+                    <Text style={[styles.modalSection, { color: colors.warning }]}>IF PENDING LEAVE IS APPROVED</Text>
+                    <View style={styles.covRow}>
+                      <CoverageItem label="Morning" count={selectedDay.coverage_if_pending_approved.morning} min={3} color={colors.morning} />
+                      <CoverageItem label="Afternoon" count={selectedDay.coverage_if_pending_approved.afternoon} min={2} color={colors.afternoon} />
+                      <CoverageItem label="Night" count={selectedDay.coverage_if_pending_approved.night} min={2} color={colors.night} />
+                    </View>
+                  </>
+                )}
 
                 {/* Combined roster log */}
                 {selectedDay.roster?.length > 0 && (
@@ -447,6 +467,15 @@ function CoverageItem({ label, count, min, color }: any) {
   );
 }
 
+function CoverageMini({ count, min, color }: any) {
+  const low = count < min;
+  return (
+    <Text style={[styles.cellTinyNum, { color: low ? colors.danger : color }]}>
+      {count}/{min}
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", alignItems: "center", padding: 20, paddingBottom: 12, gap: 12 },
@@ -493,7 +522,11 @@ const styles = StyleSheet.create({
   },
   cellDate: { fontSize: 13, fontWeight: "800" },
   cellRow: { flexDirection: "row", justifyContent: "space-between", marginTop: "auto" },
-  cellTinyNum: { fontSize: 9, fontWeight: "800" },
+  cellTinyNum: { fontSize: 8, fontWeight: "800" },
+  pendingRiskDot: {
+    position: "absolute", bottom: 2, left: 3, flexDirection: "row", alignItems: "center", gap: 1,
+  },
+  pendingRiskText: { color: colors.warning, fontSize: 7, fontWeight: "800" },
   cellLeaveDot: {
     position: "absolute", top: 3, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
   },
