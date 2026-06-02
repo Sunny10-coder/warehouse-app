@@ -32,7 +32,7 @@ export default function Schedule() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
-  const [viewMode, setViewMode] = useState<"mine" | "team">("mine");
+  const [viewMode, setViewMode] = useState<"mine" | "team">(isAdmin ? "team" : "mine");
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -62,7 +62,12 @@ export default function Schedule() {
   useRealtimeRefresh(load, ["schedules", "leaves", "users"]);
 
   const selectedDate = fmtDate(weekDays[selectedDay]);
-  const dayEntries = entries.filter(e => e.shift_date === selectedDate);
+  const dayEntries = entries
+    .filter(e => e.shift_date === selectedDate)
+    .sort((a, b) => {
+      const rank = (s: string) => s === "off" ? 3 : s === "leave" ? 2 : 1;
+      return rank(a.shift_type) - rank(b.shift_type) || a.user_name.localeCompare(b.user_name);
+    });
 
   const shiftSummary = useMemo(() => {
     const c: Record<string, number> = {};
@@ -77,6 +82,15 @@ export default function Schedule() {
           <Text style={styles.overline}>SCHEDULE</Text>
           <Text style={styles.title}>Week of {weekDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })}</Text>
         </View>
+        {isAdmin && (
+          <TouchableOpacity
+            testID="schedule-edit-selected-day"
+            style={styles.editIconBtn}
+            onPress={() => router.push({ pathname: "/schedule-edit", params: { date: selectedDate } })}
+          >
+            <Ionicons name="create" size={18} color={colors.morning} />
+          </TouchableOpacity>
+        )}
         <View style={styles.navBtns}>
           <TouchableOpacity
             testID="schedule-prev-week"
@@ -169,6 +183,16 @@ export default function Schedule() {
                 })}
               </View>
             )}
+            {isAdmin && (
+              <TouchableOpacity
+                testID="schedule-edit-day-inline"
+                style={styles.editDayBtn}
+                onPress={() => router.push({ pathname: "/schedule-edit", params: { date: selectedDate } })}
+              >
+                <Ionicons name="create" size={16} color={colors.bg} />
+                <Text style={styles.editDayText}>EDIT THIS DAY</Text>
+              </TouchableOpacity>
+            )}
             <View style={{ height: 12 }} />
           </View>
         }
@@ -229,6 +253,10 @@ const styles = StyleSheet.create({
   overline: { color: colors.textMuted, fontSize: 10, letterSpacing: 2.5, fontWeight: "700" },
   title: { color: colors.textPrimary, fontSize: 22, fontWeight: "800", marginTop: 4 },
   navBtns: { flexDirection: "row", gap: 8 },
+  editIconBtn: {
+    width: 40, height: 40, alignItems: "center", justifyContent: "center",
+    borderColor: colors.morning, borderWidth: 1, borderRadius: 4, backgroundColor: colors.morningBg, marginRight: 8,
+  },
   navBtn: {
     width: 40, height: 40, alignItems: "center", justifyContent: "center",
     borderColor: colors.border, borderWidth: 1, borderRadius: 4, backgroundColor: colors.surface,

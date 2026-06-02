@@ -4,7 +4,7 @@ import {
   RefreshControl, Modal, TextInput, Alert, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -22,6 +22,16 @@ function localDateString() {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+function mondayString(d = new Date()) {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  const month = String(monday.getMonth() + 1).padStart(2, "0");
+  const date = String(monday.getDate()).padStart(2, "0");
+  return `${monday.getFullYear()}-${month}-${date}`;
+}
+
 export default function Admin() {
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<Tab>("leaves");
@@ -30,10 +40,12 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<any>(null);
   const [createUserOpen, setCreateUserOpen] = useState(false);
-  const [genStart, setGenStart] = useState("");
+  const [genStart, setGenStart] = useState(mondayString());
   const [genTeam, setGenTeam] = useState<"A" | "B">("A");
   const [genSundayA, setGenSundayA] = useState("");
   const [genSundayB, setGenSundayB] = useState("");
+  const [genWeeks, setGenWeeks] = useState<2 | 4>(2);
+  const [lastGenerated, setLastGenerated] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
@@ -134,18 +146,28 @@ export default function Admin() {
       Alert.alert("Required", "Enter start date (Monday, YYYY-MM-DD)");
       return;
     }
+    if (sundayTeamA.length > 0 && !genSundayA) {
+      Alert.alert("Required", "Select one Team A staff for Sunday duty.");
+      return;
+    }
+    if (sundayTeamB.length > 0 && !genSundayB) {
+      Alert.alert("Required", "Select one Team B staff for Sunday duty.");
+      return;
+    }
     setGenerating(true);
     try {
       const r = await api.post("/schedules/generate", {
         start_date: genStart,
-        weeks: 2,
+        weeks: genWeeks,
         active_saturday_team: genTeam,
         sunday_team_a_user_id: genSundayA || null,
         sunday_team_b_user_id: genSundayB || null,
       });
+      setLastGenerated(r.data);
+      await load();
       Alert.alert(
         "Generated",
-        `${r.data.generated} shift entries over ${r.data.days} days created. Sunday comp off added: ${r.data.comp_off_added || 0}.`,
+        `${r.data.generated} shift entries over ${r.data.days} days created. Sunday comp off added: ${r.data.comp_off_added || 0}. Calendar is updated.`,
       );
     } catch (e) {
       Alert.alert("Error", errMsg(e));
@@ -310,21 +332,60 @@ export default function Admin() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Auto-Generate Schedule</Text>
+              <View style={styles.scheduleHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Generate Schedule</Text>
+                  <Text style={styles.helper}>
+                    One clean generation updates the live schedule calendar. Approved sick, annual, and comp-off leave automatically replaces shifts with Leave and reduces balances.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  testID="open-schedule-calendar"
+                  style={styles.iconCommandBtn}
+                  onPress={() => router.push("/schedule")}
+                >
+                  <Ionicons name="calendar" size={18} color={colors.morning} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.helper}>
                 Generates a 2-week schedule for active staff. Manager, Assistant Manager, and Document Controller stay off Sunday.
                 Choose one Team A and one Team B staff for Sunday duty; each selected staff gets 1 comp off per Sunday duty.
               </Text>
 
               <Text style={styles.modalLabel}>Start Date (must be a Monday)</Text>
-              <TextInput
-                testID="generate-start-date"
-                value={genStart}
-                onChangeText={setGenStart}
-                style={styles.modalInput}
-                placeholder="2026-06-01"
-                placeholderTextColor={colors.textMuted}
-              />
+              <View style={styles.generateDateRow}>
+                <TextInput
+                  testID="generate-start-date"
+                  value={genStart}
+                  onChangeText={setGenStart}
+                  style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
+                  placeholder="2026-06-01"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <TouchableOpacity
+                  testID="generate-this-week"
+                  style={styles.dateQuickBtn}
+                  onPress={() => setGenStart(mondayString())}
+                >
+                  <Text style={styles.dateQuickText}>THIS WEEK</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalLabel}>Coverage Length</Text>
+              <View style={styles.teamRow}>
+                {([2, 4] as const).map(w => (
+                  <TouchableOpacity
+                    key={w}
+                    testID={`gen-weeks-${w}`}
+                    onPress={() => setGenWeeks(w)}
+                    style={[styles.teamBtn, genWeeks === w && styles.teamBtnActive]}
+                  >
+                    <Text style={[styles.teamBtnText, genWeeks === w && { color: colors.bg }]}>
+                      {w} WEEKS
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               <Text style={styles.modalLabel}>Active Saturday Team (Week 1)</Text>
               <View style={styles.teamRow}>
@@ -367,8 +428,35 @@ export default function Admin() {
                 disabled={generating}
               >
                 {generating ? <ActivityIndicator color={colors.bg} /> :
-                  <Text style={styles.submitBtnText}>GENERATE 2-WEEK SCHEDULE</Text>}
+                  <Text style={styles.submitBtnText}>GENERATE & UPDATE CALENDAR</Text>}
               </TouchableOpacity>
+
+              {lastGenerated && (
+                <View style={styles.generatedSummary}>
+                  <Text style={styles.generatedTitle}>LAST GENERATION COMPLETE</Text>
+                  <Text style={styles.generatedText}>
+                    {lastGenerated.generated} entries over {lastGenerated.days} days. Comp off added: {lastGenerated.comp_off_added || 0}.
+                  </Text>
+                  <View style={styles.generatedActions}>
+                    <TouchableOpacity
+                      testID="view-generated-schedule"
+                      style={styles.generatedBtn}
+                      onPress={() => router.push("/schedule")}
+                    >
+                      <Ionicons name="calendar" size={15} color={colors.bg} />
+                      <Text style={styles.generatedBtnText}>VIEW CALENDAR</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="edit-generated-day"
+                      style={[styles.generatedBtn, { backgroundColor: colors.surfaceHi, borderColor: colors.morning, borderWidth: 1 }]}
+                      onPress={() => router.push({ pathname: "/schedule-edit", params: { date: genStart } })}
+                    >
+                      <Ionicons name="create" size={15} color={colors.morning} />
+                      <Text style={[styles.generatedBtnText, { color: colors.morning }]}>EDIT START DAY</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           </>
         )}
@@ -947,6 +1035,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,59,48,0.08)",
   },
   helper: { color: colors.textSecondary, fontSize: 12, marginBottom: 14, lineHeight: 18 },
+  scheduleHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  iconCommandBtn: {
+    width: 42, height: 42, alignItems: "center", justifyContent: "center",
+    borderColor: colors.morning, borderWidth: 1, borderRadius: 4, backgroundColor: colors.morningBg,
+  },
+  generateDateRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  dateQuickBtn: {
+    height: 48, paddingHorizontal: 12, alignItems: "center", justifyContent: "center",
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4, backgroundColor: colors.surfaceHi,
+  },
+  dateQuickText: { color: colors.textPrimary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   modalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 6, marginTop: 8 },
   modalInput: {
     height: 48, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
@@ -978,6 +1077,18 @@ const styles = StyleSheet.create({
     height: 46, backgroundColor: colors.danger, borderRadius: 4, marginTop: 6,
   },
   dangerBtnText: { color: "#fff", fontWeight: "800", letterSpacing: 1.2, fontSize: 12 },
+  generatedSummary: {
+    marginTop: 12, padding: 12, borderRadius: 4, borderColor: colors.success,
+    borderWidth: 1, backgroundColor: colors.surfaceHi,
+  },
+  generatedTitle: { color: colors.success, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  generatedText: { color: colors.textSecondary, fontSize: 12, marginTop: 5, lineHeight: 18 },
+  generatedActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  generatedBtn: {
+    flexGrow: 1, minWidth: 132, height: 38, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 6, borderRadius: 4, backgroundColor: colors.success,
+  },
+  generatedBtnText: { color: colors.bg, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,

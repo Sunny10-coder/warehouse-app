@@ -744,6 +744,27 @@ async def create_or_update_schedule(
     u = await db.users.find_one({"_id": payload.user_id})
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    try:
+        shift_day = date.fromisoformat(payload.shift_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="shift_date must be YYYY-MM-DD")
+    is_sunday = shift_day.weekday() == 6
+    if is_sunday and u["role"] in ADMIN_ROLES and payload.shift_type not in ("off", "leave"):
+        raise HTTPException(status_code=400, detail="Manager, Assistant Manager, and Document Controller are off on Sunday")
+    if payload.shift_type in ("sun_day", "sun_night"):
+        if not is_sunday:
+            raise HTTPException(status_code=400, detail="Sunday duty can only be assigned on Sunday")
+        if u["role"] in ADMIN_ROLES or u.get("location") == "ega" or u.get("team") not in ("A", "B"):
+            raise HTTPException(status_code=400, detail="Sunday duty must be one non-EGA staff member from Team A or Team B")
+        team_existing = await db.schedules.find_one({
+            "shift_date": payload.shift_date,
+            "shift_type": {"$in": ["sun_day", "sun_night"]},
+            "user_id": {"$ne": u["_id"]},
+        })
+        if team_existing:
+            existing_user = await db.users.find_one({"_id": team_existing["user_id"]})
+            if existing_user and existing_user.get("team") == u.get("team"):
+                raise HTTPException(status_code=400, detail=f"Team {u.get('team')} already has Sunday duty assigned")
     existing = await db.schedules.find_one({"user_id": u["_id"], "shift_date": payload.shift_date})
     start, end = _times_for(payload.shift_type)
     entry = ScheduleEntry(
@@ -817,9 +838,9 @@ async def generate_schedule(
     users_by_id = {u["_id"]: u for u in users}
     sunday_a = users_by_id.get(payload.sunday_team_a_user_id or "")
     sunday_b = users_by_id.get(payload.sunday_team_b_user_id or "")
-    if payload.sunday_team_a_user_id and (not sunday_a or sunday_a.get("team") != "A" or sunday_a.get("role") in ADMIN_ROLES):
+    if payload.sunday_team_a_user_id and (not sunday_a or sunday_a.get("team") != "A" or sunday_a.get("role") in ADMIN_ROLES or sunday_a.get("location") == "ega"):
         raise HTTPException(status_code=400, detail="Sunday Team A staff must be an active non-admin Team A user")
-    if payload.sunday_team_b_user_id and (not sunday_b or sunday_b.get("team") != "B" or sunday_b.get("role") in ADMIN_ROLES):
+    if payload.sunday_team_b_user_id and (not sunday_b or sunday_b.get("team") != "B" or sunday_b.get("role") in ADMIN_ROLES or sunday_b.get("location") == "ega"):
         raise HTTPException(status_code=400, detail="Sunday Team B staff must be an active non-admin Team B user")
     sunday_assignments = {
         payload.sunday_team_a_user_id: "sun_day",
@@ -1197,22 +1218,31 @@ async def act_on_leave(
         if f:
             await db.users.update_one({"_id": leave["user_id"]}, {"$inc": {f: -leave["days"]}})
         for d in _date_range(leave["start_date"], leave["end_date"]):
+            existing_schedule = await db.schedules.find_one({"user_id": leave["user_id"], "shift_date": d})
+            if (existing_schedule or {}).get("shift_type") in ("sun_day", "sun_night"):
+                await _revoke_sunday_comp_off(db, leave["user_id"], d)
             await db.schedules.update_one(
                 {"user_id": leave["user_id"], "shift_date": d},
                 {"$set": {
+                    "id": (existing_schedule or {}).get("id", str(uuid.uuid4())),
+                    "user_id": leave["user_id"],
+                    "user_name": leave["user_name"],
+                    "shift_date": d,
                     "shift_type": "leave",
                     "start_time": "",
                     "end_time": "",
                     "hours": 0,
                     "notes": f"On {leave['leave_type']} leave",
+                    "created_at": (existing_schedule or {}).get("created_at", datetime.now(timezone.utc)),
                 }},
-                upsert=False,
+                upsert=True,
             )
 
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})
     await realtime.broadcast("leaves", new_status, {"leave_id": leave_id, "user_id": leave["user_id"]})
     if new_status == "approved":
         await realtime.broadcast("schedules", "leave_applied", {"leave_id": leave_id, "user_id": leave["user_id"]})
+        await realtime.broadcast("users", "leave_balance_updated", {"leave_id": leave_id, "user_id": leave["user_id"]})
     return LeaveRequest(**leave)
 
 
