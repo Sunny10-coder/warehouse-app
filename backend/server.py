@@ -1269,10 +1269,12 @@ async def act_on_leave(
         f = field_map.get(leave["leave_type"])
         if f:
             await db.users.update_one({"_id": leave["user_id"]}, {"$inc": {f: -leave["days"]}})
-        for d in _date_range(leave["start_date"], leave["end_date"]):
+        applied_dates = _date_range(leave["start_date"], leave["end_date"])
+        for d in applied_dates:
             existing_schedule = await db.schedules.find_one({"user_id": leave["user_id"], "shift_date": d})
             if (existing_schedule or {}).get("shift_type") in ("sun_day", "sun_night"):
                 await _revoke_sunday_comp_off(db, leave["user_id"], d)
+            previous_shift = (existing_schedule or {}).get("shift_type", "unscheduled")
             await db.schedules.update_one(
                 {"user_id": leave["user_id"], "shift_date": d},
                 {"$set": {
@@ -1284,7 +1286,7 @@ async def act_on_leave(
                     "start_time": "",
                     "end_time": "",
                     "hours": 0,
-                    "notes": f"On {leave['leave_type']} leave",
+                    "notes": f"Leave approved: {leave['leave_type']} ({leave_id}); previous shift: {previous_shift}",
                     "created_at": (existing_schedule or {}).get("created_at", datetime.now(timezone.utc)),
                 }},
                 upsert=True,
@@ -1293,7 +1295,16 @@ async def act_on_leave(
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})
     await realtime.broadcast("leaves", new_status, {"leave_id": leave_id, "user_id": leave["user_id"]})
     if new_status == "approved":
-        await realtime.broadcast("schedules", "leave_applied", {"leave_id": leave_id, "user_id": leave["user_id"]})
+        await realtime.broadcast(
+            "schedules",
+            "leave_applied",
+            {
+                "leave_id": leave_id,
+                "user_id": leave["user_id"],
+                "start_date": leave["start_date"],
+                "end_date": leave["end_date"],
+            },
+        )
         await realtime.broadcast("users", "leave_balance_updated", {"leave_id": leave_id, "user_id": leave["user_id"]})
     return LeaveRequest(**leave)
 
