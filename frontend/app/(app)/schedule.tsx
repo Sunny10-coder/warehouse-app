@@ -36,7 +36,9 @@ function fmtDate(d: Date) {
 
 export default function Schedule() {
   const { user, isAdmin } = useAuth();
-  const params = useLocalSearchParams<{ start?: string }>();
+  const params = useLocalSearchParams<{ start?: string; weeks?: string }>();
+  const rangeWeeks = params.weeks === "4" ? 4 : params.weeks === "2" ? 2 : 1;
+  const rangeLength = rangeWeeks * 7;
   const [weekStart, setWeekStart] = useState(startOfWeek(parseLocalDate(params.start)));
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,15 +46,16 @@ export default function Schedule() {
   const [viewMode, setViewMode] = useState<"mine" | "team">(isAdmin ? "team" : "mine");
 
   const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
+    return Array.from({ length: rangeLength }, (_, i) => {
       const d = new Date(weekStart);
       d.setDate(weekStart.getDate() + i);
       return d;
     });
-  }, [weekStart]);
+  }, [weekStart, rangeLength]);
 
   useEffect(() => {
     if (params.start) {
+      setSelectedDay(0);
       setWeekStart(startOfWeek(parseLocalDate(params.start)));
     }
   }, [params.start]);
@@ -67,7 +70,7 @@ export default function Schedule() {
     setLoading(true);
     try {
       const start = fmtDate(weekDays[0]);
-      const end = fmtDate(weekDays[6]);
+      const end = fmtDate(weekDays[weekDays.length - 1]);
       const params: any = { start_date: start, end_date: end };
       if (viewMode === "mine") params.user_id = user?.id;
       const r = await api.get("/schedules", { params });
@@ -101,7 +104,12 @@ export default function Schedule() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.overline}>SCHEDULE</Text>
-          <Text style={styles.title}>Week of {weekDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })}</Text>
+          <Text style={styles.title}>
+            {rangeWeeks > 1 ? `${rangeWeeks}-Week Schedule` : "Week Schedule"}
+          </Text>
+          <Text style={styles.rangeLabel}>
+            {weekDays[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} - {weekDays[weekDays.length - 1].toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          </Text>
         </View>
         {isAdmin && (
           <TouchableOpacity
@@ -118,7 +126,7 @@ export default function Schedule() {
             style={styles.navBtn}
             onPress={() => {
               const d = new Date(weekStart);
-              d.setDate(d.getDate() - 7);
+              d.setDate(d.getDate() - rangeLength);
               setWeekStart(d);
             }}
           >
@@ -129,7 +137,7 @@ export default function Schedule() {
             style={styles.navBtn}
             onPress={() => {
               const d = new Date(weekStart);
-              d.setDate(d.getDate() + 7);
+              d.setDate(d.getDate() + rangeLength);
               setWeekStart(d);
             }}
           >
@@ -169,7 +177,7 @@ export default function Schedule() {
               onPress={() => setSelectedDay(i)}
               style={[styles.dayCell, isSelected && styles.dayCellActive]}
             >
-              <Text style={[styles.dayLabel, isSelected && { color: colors.bg }]}>{DAY_LABELS[i]}</Text>
+              <Text style={[styles.dayLabel, isSelected && { color: colors.bg }]}>{DAY_LABELS[i % 7]}</Text>
               <Text style={[styles.dayNum, isSelected && { color: colors.bg }]}>{d.getDate()}</Text>
               {dayEntriesCount > 0 && (
                 <View style={[styles.dot, isSelected && { backgroundColor: colors.bg }]} />
@@ -273,6 +281,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", padding: 20, paddingBottom: 12, alignItems: "flex-end" },
   overline: { color: colors.textMuted, fontSize: 10, letterSpacing: 2.5, fontWeight: "700" },
   title: { color: colors.textPrimary, fontSize: 22, fontWeight: "800", marginTop: 4 },
+  rangeLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontWeight: "700" },
   navBtns: { flexDirection: "row", gap: 8 },
   editIconBtn: {
     width: 40, height: 40, alignItems: "center", justifyContent: "center",

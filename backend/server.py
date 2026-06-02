@@ -892,6 +892,7 @@ async def generate_schedule(
     sunday_assignments.pop("", None)
 
     generated = 0
+    leave_preserved = 0
     comp_off_added = 0
     comp_off_removed = 0
     for i in range(days):
@@ -910,6 +911,7 @@ async def generate_schedule(
 
             if (u["_id"], date_str) in approved_leave_days:
                 shift_type = "leave"
+                leave_preserved += 1
             elif role in ADMIN_ROLES:
                 if weekday <= 4:  # Mon-Fri
                     shift_type = "admin"
@@ -967,7 +969,13 @@ async def generate_schedule(
     await realtime.broadcast("schedules", "generated", {"start_date": payload.start_date, "days": days})
     if comp_off_added or comp_off_removed:
         await realtime.broadcast("users", "comp_off_updated", {"added": comp_off_added, "removed": comp_off_removed})
-    return {"generated": generated, "days": days, "comp_off_added": comp_off_added, "comp_off_removed": comp_off_removed}
+    return {
+        "generated": generated,
+        "days": days,
+        "leave_preserved": leave_preserved,
+        "comp_off_added": comp_off_added,
+        "comp_off_removed": comp_off_removed,
+    }
 
 
 # ---------------------------------------------------------------------------

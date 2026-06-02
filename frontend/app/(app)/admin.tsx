@@ -165,9 +165,10 @@ export default function Admin() {
       });
       setLastGenerated(r.data);
       await load();
+      router.push({ pathname: "/(app)/schedule", params: { start: genStart, weeks: String(genWeeks) } });
       Alert.alert(
         "Generated",
-        `${r.data.generated} shift entries over ${r.data.days} days created. Sunday comp off added: ${r.data.comp_off_added || 0}. Calendar is updated.`,
+        `${r.data.generated} shift entries over ${r.data.days} days created. Leave days kept: ${r.data.leave_preserved || 0}. Sunday comp off added: ${r.data.comp_off_added || 0}. Calendar is updated.`,
       );
     } catch (e) {
       Alert.alert("Error", errMsg(e));
@@ -342,7 +343,7 @@ export default function Admin() {
                 <TouchableOpacity
                   testID="open-schedule-calendar"
                   style={styles.iconCommandBtn}
-                  onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart } })}
+                  onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart, weeks: String(genWeeks) } })}
                 >
                   <Ionicons name="calendar" size={18} color={colors.morning} />
                 </TouchableOpacity>
@@ -436,12 +437,13 @@ export default function Admin() {
                   <Text style={styles.generatedTitle}>LAST GENERATION COMPLETE</Text>
                   <Text style={styles.generatedText}>
                     {lastGenerated.generated} entries over {lastGenerated.days} days. Comp off added: {lastGenerated.comp_off_added || 0}.
+                    {lastGenerated.leave_preserved ? ` Leave days kept: ${lastGenerated.leave_preserved}.` : ""}
                   </Text>
                   <View style={styles.generatedActions}>
                     <TouchableOpacity
                       testID="view-generated-schedule"
                       style={styles.generatedBtn}
-                      onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart } })}
+                      onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart, weeks: String(genWeeks) } })}
                     >
                       <Ionicons name="calendar" size={15} color={colors.bg} />
                       <Text style={styles.generatedBtnText}>VIEW CALENDAR</Text>
