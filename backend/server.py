@@ -54,8 +54,8 @@ SHIFT_HOURS = {
     "afternoon": 9,    # 12-21
     "night": 9,        # 21-06
     "admin": 9,        # 7:30-16:30
-    "sat_day": 12,     # 7-19
-    "sat_night": 12,   # 19-07
+    "sat_day": 12,     # 06-18
+    "sat_night": 12,   # 18-06
     "sun_day": 12,
     "sun_night": 12,
     "ega": 9,
@@ -67,10 +67,10 @@ SHIFT_TIMES = {
     "afternoon": ("12:00", "21:00"),
     "night": ("21:00", "06:00"),
     "admin": ("07:30", "16:30"),
-    "sat_day": ("07:00", "19:00"),
-    "sat_night": ("19:00", "07:00"),
-    "sun_day": ("07:00", "19:00"),
-    "sun_night": ("19:00", "07:00"),
+    "sat_day": ("06:00", "18:00"),
+    "sat_night": ("18:00", "06:00"),
+    "sun_day": ("06:00", "18:00"),
+    "sun_night": ("18:00", "06:00"),
     "ega": ("07:00", "16:00"),
     "off": ("", ""),
     "leave": ("", ""),
@@ -213,6 +213,8 @@ class GenerateScheduleRequest(BaseModel):
     active_saturday_team: str = "A"  # which team works Saturday for week 1
     sunday_team_a_user_id: Optional[str] = None
     sunday_team_b_user_id: Optional[str] = None
+    sunday_team_a_shift: str = "sun_day"
+    sunday_team_b_shift: str = "sun_night"
 
 
 class AttendanceMark(BaseModel):
@@ -884,9 +886,13 @@ async def generate_schedule(
         raise HTTPException(status_code=400, detail="Sunday Team A staff must be an active non-admin Team A user")
     if payload.sunday_team_b_user_id and (not sunday_b or sunday_b.get("team") != "B" or sunday_b.get("role") in ADMIN_ROLES or sunday_b.get("location") == "ega"):
         raise HTTPException(status_code=400, detail="Sunday Team B staff must be an active non-admin Team B user")
+    if payload.sunday_team_a_shift not in ("sun_day", "sun_night"):
+        raise HTTPException(status_code=400, detail="Sunday Team A shift must be sun_day or sun_night")
+    if payload.sunday_team_b_shift not in ("sun_day", "sun_night"):
+        raise HTTPException(status_code=400, detail="Sunday Team B shift must be sun_day or sun_night")
     sunday_assignments = {
-        payload.sunday_team_a_user_id: "sun_day",
-        payload.sunday_team_b_user_id: "sun_night",
+        payload.sunday_team_a_user_id: payload.sunday_team_a_shift,
+        payload.sunday_team_b_user_id: payload.sunday_team_b_shift,
     }
     sunday_assignments.pop(None, None)
     sunday_assignments.pop("", None)
@@ -928,10 +934,8 @@ async def generate_schedule(
                 if weekday <= 4:
                     shift_type = shift_default or "morning"
                 elif weekday == 5:
-                    if team == sat_team and shift_default in ("morning", "afternoon"):
+                    if team == sat_team:
                         shift_type = "sat_day"
-                    elif team == sat_team and shift_default == "night":
-                        shift_type = "sat_night"
                     else:
                         shift_type = "off"
                 else:  # Sunday

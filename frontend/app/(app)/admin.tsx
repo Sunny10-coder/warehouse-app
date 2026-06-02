@@ -44,6 +44,8 @@ export default function Admin() {
   const [genTeam, setGenTeam] = useState<"A" | "B">("A");
   const [genSundayA, setGenSundayA] = useState("");
   const [genSundayB, setGenSundayB] = useState("");
+  const [genSundayAShift, setGenSundayAShift] = useState<"sun_day" | "sun_night">("sun_day");
+  const [genSundayBShift, setGenSundayBShift] = useState<"sun_day" | "sun_night">("sun_night");
   const [genWeeks, setGenWeeks] = useState<2 | 4>(2);
   const [lastGenerated, setLastGenerated] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
@@ -162,6 +164,8 @@ export default function Admin() {
         active_saturday_team: genTeam,
         sunday_team_a_user_id: genSundayA || null,
         sunday_team_b_user_id: genSundayB || null,
+        sunday_team_a_shift: genSundayAShift,
+        sunday_team_b_shift: genSundayBShift,
       });
       setLastGenerated(r.data);
       await load();
@@ -403,6 +407,9 @@ export default function Admin() {
                   </TouchableOpacity>
                 ))}
               </View>
+              <Text style={styles.helper}>
+                Saturday active team works Day 6am-6pm. Admin roles are excluded.
+              </Text>
 
               <Text style={styles.modalLabel}>Sunday Duty - Team A</Text>
               <StaffSelectRow
@@ -412,6 +419,11 @@ export default function Admin() {
                 emptyText="No Team A staff available"
                 testPrefix="gen-sunday-a"
               />
+              <SundayShiftSelect
+                selected={genSundayAShift}
+                onSelect={setGenSundayAShift}
+                testPrefix="gen-sunday-a-shift"
+              />
 
               <Text style={styles.modalLabel}>Sunday Duty - Team B</Text>
               <StaffSelectRow
@@ -420,6 +432,11 @@ export default function Admin() {
                 onSelect={setGenSundayB}
                 emptyText="No Team B staff available"
                 testPrefix="gen-sunday-b"
+              />
+              <SundayShiftSelect
+                selected={genSundayBShift}
+                onSelect={setGenSundayBShift}
+                testPrefix="gen-sunday-b-shift"
               />
 
               <TouchableOpacity
@@ -982,6 +999,30 @@ function StaffSelectRow({ users, selectedId, onSelect, emptyText, testPrefix }: 
   );
 }
 
+function SundayShiftSelect({ selected, onSelect, testPrefix }: any) {
+  return (
+    <View style={styles.sundayShiftRow}>
+      {[
+        { key: "sun_day", label: "DAY 6AM-6PM", icon: "sunny" },
+        { key: "sun_night", label: "NIGHT 6PM-6AM", icon: "moon" },
+      ].map(option => {
+        const active = selected === option.key;
+        return (
+          <TouchableOpacity
+            key={option.key}
+            testID={`${testPrefix}-${option.key}`}
+            style={[styles.sundayShiftBtn, active && styles.sundayShiftBtnActive]}
+            onPress={() => onSelect(option.key)}
+          >
+            <Ionicons name={option.icon as any} size={15} color={active ? colors.bg : colors.textPrimary} />
+            <Text style={[styles.sundayShiftText, active && { color: colors.bg }]}>{option.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { padding: 20, paddingBottom: 12 },
@@ -1069,6 +1110,13 @@ const styles = StyleSheet.create({
   staffSelectName: { color: colors.textPrimary, fontSize: 12, fontWeight: "800" },
   staffSelectMeta: { color: colors.textSecondary, fontSize: 10, marginTop: 2, fontWeight: "700" },
   selectorEmpty: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
+  sundayShiftRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  sundayShiftBtn: {
+    flex: 1, minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, borderRadius: 4, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surfaceHi,
+  },
+  sundayShiftBtnActive: { backgroundColor: colors.morning, borderColor: colors.morning },
+  sundayShiftText: { color: colors.textPrimary, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   submitBtn: {
     height: 52, backgroundColor: colors.textPrimary, alignItems: "center", justifyContent: "center",
     borderRadius: 4, marginTop: 16,

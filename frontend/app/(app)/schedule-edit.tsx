@@ -16,10 +16,10 @@ const SHIFT_GROUPS = [
   { key: "night", title: "NIGHT (21-06)", min: 2 },
   { key: "admin", title: "ADMIN (7:30-16:30)", min: 0 },
   { key: "ega", title: "EGA SITE", min: 0 },
-  { key: "sat_day", title: "SAT DAY (7-19)", min: 0 },
-  { key: "sat_night", title: "SAT NIGHT (19-7)", min: 0 },
-  { key: "sun_day", title: "SUN DAY (7-19)", min: 0 },
-  { key: "sun_night", title: "SUN NIGHT (19-7)", min: 0 },
+  { key: "sat_day", title: "SAT DAY (6-18)", min: 0 },
+  { key: "sat_night", title: "SAT NIGHT (18-6)", min: 0 },
+  { key: "sun_day", title: "SUN DAY (6-18)", min: 0 },
+  { key: "sun_night", title: "SUN NIGHT (18-6)", min: 0 },
 ];
 
 const ASSIGN_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "sat_day", "sat_night", "sun_day", "sun_night", "off"];
