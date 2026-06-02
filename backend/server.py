@@ -1273,6 +1273,15 @@ async def act_on_leave(
         f = field_map.get(leave["leave_type"])
         if f:
             await db.users.update_one({"_id": leave["user_id"]}, {"$inc": {f: -leave["days"]}})
+        elif leave["leave_type"] == "emergency":
+            leave_user = await db.users.find_one({"_id": leave["user_id"]}, {"comp_off_balance": 1})
+            comp_off_available = max(0, int((leave_user or {}).get("comp_off_balance", 0)))
+            comp_off_deduction = min(comp_off_available, leave["days"])
+            if comp_off_deduction:
+                await db.users.update_one(
+                    {"_id": leave["user_id"]},
+                    {"$inc": {"comp_off_balance": -comp_off_deduction}},
+                )
         applied_dates = _date_range(leave["start_date"], leave["end_date"])
         for d in applied_dates:
             existing_schedule = await db.schedules.find_one({"user_id": leave["user_id"], "shift_date": d})

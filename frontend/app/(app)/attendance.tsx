@@ -9,7 +9,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
-import { colors, shiftLabel, shiftColor } from "@/src/theme";
+import { colors, shiftLabel, shiftColor, leaveLabel, leaveColor } from "@/src/theme";
+
+const LEAVE_TYPES = [
+  { key: "annual", icon: "airplane" },
+  { key: "sick", icon: "medkit" },
+  { key: "comp_off", icon: "swap-horizontal" },
+  { key: "emergency", icon: "warning" },
+] as const;
 
 function todayStr() {
   const d = new Date();
@@ -39,6 +46,12 @@ export default function Attendance() {
   const [clockOut, setClockOut] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveType, setLeaveType] = useState<(typeof LEAVE_TYPES)[number]["key"]>("sick");
+  const [leaveStart, setLeaveStart] = useState(todayStr());
+  const [leaveEnd, setLeaveEnd] = useState(todayStr());
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   const monthStart = (() => {
     const d = new Date();
@@ -64,7 +77,7 @@ export default function Attendance() {
   }, [user?.id, monthStart]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  useRealtimeRefresh(load, ["attendance", "schedules"]);
+  useRealtimeRefresh(load, ["attendance", "schedules", "leaves"]);
 
   const quickMark = async (status: string) => {
     setSubmitting(true);
@@ -135,6 +148,52 @@ export default function Attendance() {
       await load();
     } catch (e) {
       setError(errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openLeaveModal = () => {
+    const today = todayStr();
+    setLeaveType("sick");
+    setLeaveStart(today);
+    setLeaveEnd(today);
+    setLeaveReason("");
+    setLeaveError(null);
+    setShowLeaveModal(true);
+  };
+
+  const submitLeaveRequest = async () => {
+    const start = leaveStart.trim();
+    const end = leaveEnd.trim();
+    const reason = leaveReason.trim();
+    if (!start || !end) {
+      setLeaveError("Enter start date and end date");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      setLeaveError("Use date format YYYY-MM-DD");
+      return;
+    }
+    if (!reason) {
+      setLeaveError("Enter the leave reason");
+      return;
+    }
+    setLeaveError(null);
+    setSubmitting(true);
+    try {
+      await api.post("/leaves", {
+        leave_type: leaveType,
+        start_date: start,
+        end_date: end,
+        reason,
+      });
+      setShowLeaveModal(false);
+      setLeaveReason("");
+      Alert.alert("Submitted", "Leave request sent for approval.");
+      await load();
+    } catch (e) {
+      setLeaveError(errMsg(e));
     } finally {
       setSubmitting(false);
     }
@@ -241,6 +300,15 @@ export default function Attendance() {
               <Ionicons name="hourglass" size={16} color={colors.bg} />
               <Text style={styles.actionBtnText}>MANUAL</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="attendance-leave-request"
+              style={[styles.actionBtn, { backgroundColor: colors.compOff }]}
+              onPress={openLeaveModal}
+              disabled={submitting}
+            >
+              <Ionicons name="calendar-clear" size={16} color={colors.bg} />
+              <Text style={styles.actionBtnText}>LEAVE</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -343,6 +411,82 @@ export default function Attendance() {
           </View>
         </View>
       </Modal>
+
+      {/* Leave Request Modal */}
+      <Modal visible={showLeaveModal} transparent animationType="fade" onRequestClose={() => setShowLeaveModal(false)}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Request Leave</Text>
+              <TouchableOpacity onPress={() => setShowLeaveModal(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHint}>Select the leave type and dates. Approved leave updates schedule, calendar, and reports.</Text>
+            <Text style={styles.modalLabel}>Leave Type</Text>
+            <View style={styles.leaveTypeGrid}>
+              {LEAVE_TYPES.map((t) => {
+                const selected = leaveType === t.key;
+                const c = leaveColor(t.key);
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    testID={`attendance-leave-type-${t.key}`}
+                    style={[
+                      styles.leaveTypeChip,
+                      { borderColor: selected ? c : colors.border, backgroundColor: selected ? `${c}22` : colors.surfaceHi },
+                    ]}
+                    onPress={() => setLeaveType(t.key)}
+                  >
+                    <Ionicons name={t.icon as any} size={16} color={c} />
+                    <Text style={[styles.leaveTypeText, { color: selected ? colors.textPrimary : colors.textSecondary }]}>
+                      {leaveLabel[t.key]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.modalLabel}>Start Date</Text>
+            <TextInput
+              testID="attendance-leave-start"
+              style={styles.modalInput}
+              value={leaveStart}
+              onChangeText={setLeaveStart}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Text style={styles.modalLabel}>End Date</Text>
+            <TextInput
+              testID="attendance-leave-end"
+              style={styles.modalInput}
+              value={leaveEnd}
+              onChangeText={setLeaveEnd}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Text style={styles.modalLabel}>Reason</Text>
+            <TextInput
+              testID="attendance-leave-reason"
+              style={[styles.modalInput, styles.reasonInput]}
+              value={leaveReason}
+              onChangeText={setLeaveReason}
+              placeholder="Reason for leave"
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+            {leaveError && <Text style={{ color: colors.danger, fontSize: 12, marginBottom: 8 }}>{leaveError}</Text>}
+            <TouchableOpacity
+              testID="attendance-leave-submit"
+              style={styles.modalBtn}
+              onPress={submitLeaveRequest}
+              disabled={submitting}
+            >
+              {submitting ? <ActivityIndicator color={colors.bg} /> :
+                <Text style={styles.modalBtnText}>SUBMIT LEAVE</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -405,6 +549,13 @@ const styles = StyleSheet.create({
     height: 48, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
     borderRadius: 4, color: colors.textPrimary, paddingHorizontal: 14, marginBottom: 14, fontSize: 15,
   },
+  reasonInput: { minHeight: 78, paddingTop: 12, textAlignVertical: "top" },
+  leaveTypeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  leaveTypeChip: {
+    minHeight: 42, minWidth: 132, flexGrow: 1, borderWidth: 1, borderRadius: 4,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 10,
+  },
+  leaveTypeText: { fontSize: 12, fontWeight: "800" },
   modalBtn: {
     height: 48, backgroundColor: colors.textPrimary, alignItems: "center", justifyContent: "center", borderRadius: 4,
   },
