@@ -187,6 +187,12 @@ class CompOffGrantCreate(BaseModel):
     reason: str
 
 
+class VacationAssign(BaseModel):
+    start_date: str
+    end_date: str
+    reason: str = "Admin assigned vacation"
+
+
 class ScheduleEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -634,6 +640,55 @@ async def list_comp_off_grants(
     return [CompOffGrant(**d) for d in docs]
 
 
+@app.post("/api/users/{user_id}/vacation", response_model=LeaveRequest)
+async def assign_approved_vacation(
+    user_id: str,
+    payload: VacationAssign,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    dates = _date_range(payload.start_date, payload.end_date)
+    if not dates:
+        raise HTTPException(status_code=400, detail="Invalid vacation date range")
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Reason is required")
+
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    days = len(dates)
+    if target.get("annual_leave_balance", 0) < days:
+        raise HTTPException(status_code=400, detail="Insufficient vacation balance")
+
+    now = datetime.now(timezone.utc)
+    leave = LeaveRequest(
+        user_id=user_id,
+        user_name=target["full_name"],
+        leave_type="annual",
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        days=days,
+        reason=payload.reason.strip(),
+        status="approved",
+        approved_by=admin["_id"],
+        approval_notes="Approved and assigned by admin",
+        created_at=now,
+        updated_at=now,
+    )
+    await db.leaves.insert_one(leave.dict())
+    await db.users.update_one({"_id": user_id}, {"$inc": {"annual_leave_balance": -days}})
+    await _apply_approved_leave_to_schedule(db, leave.dict())
+    await realtime.broadcast("leaves", "approved", {"leave_id": leave.id, "user_id": user_id})
+    await realtime.broadcast(
+        "schedules",
+        "leave_applied",
+        {"leave_id": leave.id, "user_id": user_id, "start_date": leave.start_date, "end_date": leave.end_date},
+    )
+    await realtime.broadcast("users", "leave_balance_updated", {"leave_id": leave.id, "user_id": user_id})
+    await realtime.broadcast("reports", "vacation_assigned", {"leave_id": leave.id, "user_id": user_id})
+    return leave
+
+
 @app.post("/api/users/{user_id}/approve", response_model=UserPublic)
 async def approve_user(user_id: str, admin: dict = Depends(require_admin), db=Depends(get_db)):
     res = await db.users.find_one_and_update(
@@ -749,6 +804,31 @@ async def _revoke_sunday_comp_off(db, user_id: str, shift_date: str) -> bool:
         await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": -1}})
         return True
     return False
+
+
+async def _apply_approved_leave_to_schedule(db, leave: dict) -> None:
+    applied_dates = _date_range(leave["start_date"], leave["end_date"])
+    for d in applied_dates:
+        existing_schedule = await db.schedules.find_one({"user_id": leave["user_id"], "shift_date": d})
+        if (existing_schedule or {}).get("shift_type") in ("sun_day", "sun_night"):
+            await _revoke_sunday_comp_off(db, leave["user_id"], d)
+        previous_shift = (existing_schedule or {}).get("shift_type", "unscheduled")
+        await db.schedules.update_one(
+            {"user_id": leave["user_id"], "shift_date": d},
+            {"$set": {
+                "id": (existing_schedule or {}).get("id", str(uuid.uuid4())),
+                "user_id": leave["user_id"],
+                "user_name": leave["user_name"],
+                "shift_date": d,
+                "shift_type": "leave",
+                "start_time": "",
+                "end_time": "",
+                "hours": 0,
+                "notes": f"Leave approved: {leave['leave_type']} ({leave['id']}); previous shift: {previous_shift}",
+                "created_at": (existing_schedule or {}).get("created_at", datetime.now(timezone.utc)),
+            }},
+            upsert=True,
+        )
 
 
 @app.get("/api/schedules", response_model=list[ScheduleEntry])
@@ -1138,8 +1218,11 @@ async def monthly_attendance(
 # Leaves
 # ---------------------------------------------------------------------------
 def _date_range(start: str, end: str) -> list[str]:
-    s = datetime.strptime(start, "%Y-%m-%d").date()
-    e = datetime.strptime(end, "%Y-%m-%d").date()
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d").date()
+        e = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        return []
     if e < s:
         return []
     return [(s + timedelta(days=i)).isoformat() for i in range((e - s).days + 1)]
@@ -1282,28 +1365,7 @@ async def act_on_leave(
                     {"_id": leave["user_id"]},
                     {"$inc": {"comp_off_balance": -comp_off_deduction}},
                 )
-        applied_dates = _date_range(leave["start_date"], leave["end_date"])
-        for d in applied_dates:
-            existing_schedule = await db.schedules.find_one({"user_id": leave["user_id"], "shift_date": d})
-            if (existing_schedule or {}).get("shift_type") in ("sun_day", "sun_night"):
-                await _revoke_sunday_comp_off(db, leave["user_id"], d)
-            previous_shift = (existing_schedule or {}).get("shift_type", "unscheduled")
-            await db.schedules.update_one(
-                {"user_id": leave["user_id"], "shift_date": d},
-                {"$set": {
-                    "id": (existing_schedule or {}).get("id", str(uuid.uuid4())),
-                    "user_id": leave["user_id"],
-                    "user_name": leave["user_name"],
-                    "shift_date": d,
-                    "shift_type": "leave",
-                    "start_time": "",
-                    "end_time": "",
-                    "hours": 0,
-                    "notes": f"Leave approved: {leave['leave_type']} ({leave_id}); previous shift: {previous_shift}",
-                    "created_at": (existing_schedule or {}).get("created_at", datetime.now(timezone.utc)),
-                }},
-                upsert=True,
-            )
+        await _apply_approved_leave_to_schedule(db, leave)
 
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})
     await realtime.broadcast("leaves", new_status, {"leave_id": leave_id, "user_id": leave["user_id"]})

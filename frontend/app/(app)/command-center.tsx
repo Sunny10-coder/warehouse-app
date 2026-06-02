@@ -183,8 +183,9 @@ export default function CommandCenter() {
               const isCritical = cell.status === "critical";
               const isWarn = cell.status === "warn";
               const color = isCritical ? colors.danger : isWarn ? colors.warning : colors.success;
-              const bg = isCritical ? "rgba(255,59,48,0.18)" : isWarn ? "rgba(255,159,10,0.10)" : colors.surface;
+              const bg = isCritical ? "rgba(255,59,48,0.16)" : isWarn ? "rgba(255,159,10,0.14)" : colors.surface;
               const dayNum = parseInt(cell.date.slice(-2), 10);
+              const statusText = isCritical ? "LOW" : isWarn ? "AT MIN" : "OK";
               return (
                 <TouchableOpacity
                   key={cell.date}
@@ -192,39 +193,37 @@ export default function CommandCenter() {
                   style={[styles.cell, { borderColor: color, backgroundColor: bg }]}
                   onPress={() => setSelectedDay(cell)}
                 >
-                  <Text style={[styles.cellDate, { color: isCritical ? colors.danger : colors.textPrimary }]}>{dayNum}</Text>
-                  <View style={styles.cellRow}>
-                    <CoverageMini count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
-                    <CoverageMini count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
-                    <CoverageMini count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
+                  <View style={styles.cellTop}>
+                    <Text style={[styles.cellDate, { color: isCritical ? colors.danger : colors.textPrimary }]}>{dayNum}</Text>
+                    <View style={[styles.dayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
+                      <Text style={[styles.dayStatusText, { color }]}>{statusText}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cellCoverageStack}>
+                    <CoverageMini label="M" count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
+                    <CoverageMini label="A" count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
+                    <CoverageMini label="N" count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
+                  </View>
+                  <View style={styles.cellMetaRow}>
+                    <View style={styles.cellMetaItem}>
+                      <Ionicons name="airplane" size={10} color={colors.leave} />
+                      <Text style={styles.cellLeaveCount}>{cell.leaves.length}</Text>
+                    </View>
+                    <View style={styles.cellMetaItem}>
+                      <Ionicons name="checkmark-done" size={10} color={colors.success} />
+                      <Text style={styles.cellAttendanceCount}>{cell.attendance_summary.total}</Text>
+                    </View>
+                    <View style={styles.cellMetaItem}>
+                      <Ionicons name="alert-circle" size={10} color={cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted} />
+                      <Text style={[styles.cellMissingCount, { color: cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted }]}>
+                        {cell.roster_summary?.missing || 0}
+                      </Text>
+                    </View>
                   </View>
                   {cell.pending_status !== "ok" && (
                     <View style={styles.pendingRiskDot}>
                       <Ionicons name="hourglass" size={8} color={colors.warning} />
                       <Text style={styles.pendingRiskText}>risk</Text>
-                    </View>
-                  )}
-                  {cell.leaves.length > 0 && (
-                    <View style={styles.cellLeaveDot}>
-                      <Ionicons name="airplane" size={8} color={colors.leave} />
-                      <Text style={styles.cellLeaveCount}>{cell.leaves.length}</Text>
-                    </View>
-                  )}
-                  {cell.attendance_summary.total > 0 && (
-                    <View style={styles.cellAttendanceDot}>
-                      <Ionicons name="checkmark-done" size={8} color={colors.success} />
-                      <Text style={styles.cellAttendanceCount}>{cell.attendance_summary.total}</Text>
-                    </View>
-                  )}
-                  {cell.roster_summary?.missing > 0 && (
-                    <View style={styles.cellMissingDot}>
-                      <Ionicons name="alert-circle" size={8} color={colors.danger} />
-                      <Text style={styles.cellMissingCount}>{cell.roster_summary.missing}</Text>
-                    </View>
-                  )}
-                  {isCritical && (
-                    <View style={styles.criticalBadge}>
-                      <Ionicons name="warning" size={10} color="#fff" />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -467,12 +466,15 @@ function CoverageItem({ label, count, min, color }: any) {
   );
 }
 
-function CoverageMini({ count, min, color }: any) {
+function CoverageMini({ label, count, min, color }: any) {
   const low = count < min;
   return (
-    <Text style={[styles.cellTinyNum, { color: low ? colors.danger : color }]}>
-      {count}/{min}
-    </Text>
+    <View style={[styles.coverageMini, { borderColor: low ? colors.danger : color }]}>
+      <Text style={[styles.coverageMiniLabel, { color: low ? colors.danger : color }]}>{label}</Text>
+      <Text style={[styles.cellTinyNum, { color: low ? colors.danger : color }]}>
+        {count}/{min}
+      </Text>
+    </View>
   );
 }
 
@@ -517,32 +519,32 @@ const styles = StyleSheet.create({
   dowLabel: { flex: 1, textAlign: "center", color: colors.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
   grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 10 },
   cell: {
-    width: "14.28%", aspectRatio: 1.12, padding: 3, borderWidth: 1, borderRadius: 4,
-    marginBottom: 2, justifyContent: "space-between",
+    width: "14.28%", height: 116, padding: 7, borderWidth: 1, borderRadius: 4,
+    marginBottom: 4, justifyContent: "space-between",
   },
-  cellDate: { fontSize: 17, fontWeight: "900", lineHeight: 19 },
-  cellRow: { flexDirection: "row", justifyContent: "space-between", marginTop: "auto" },
-  cellTinyNum: { fontSize: 7, fontWeight: "800" },
+  cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 4 },
+  cellDate: { fontSize: 24, fontWeight: "900", lineHeight: 26 },
+  dayStatusPill: { paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderRadius: 3 },
+  dayStatusText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  cellCoverageStack: { gap: 4 },
+  coverageMini: {
+    minHeight: 21, borderWidth: 1, borderRadius: 3, paddingHorizontal: 5,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  coverageMiniLabel: { fontSize: 9, fontWeight: "900" },
+  cellTinyNum: { fontSize: 12, fontWeight: "900" },
+  cellMetaRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderTopColor: colors.border, borderTopWidth: 1, paddingTop: 4,
+  },
+  cellMetaItem: { flexDirection: "row", alignItems: "center", gap: 2 },
   pendingRiskDot: {
-    position: "absolute", bottom: 2, left: 3, flexDirection: "row", alignItems: "center", gap: 1,
+    position: "absolute", top: 32, right: 6, flexDirection: "row", alignItems: "center", gap: 1,
   },
-  pendingRiskText: { color: colors.warning, fontSize: 7, fontWeight: "800" },
-  cellLeaveDot: {
-    position: "absolute", top: 3, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
-  },
-  cellLeaveCount: { color: colors.leave, fontSize: 8, fontWeight: "800" },
-  cellAttendanceDot: {
-    position: "absolute", top: 16, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
-  },
-  cellAttendanceCount: { color: colors.success, fontSize: 8, fontWeight: "800" },
-  cellMissingDot: {
-    position: "absolute", top: 29, right: 3, flexDirection: "row", alignItems: "center", gap: 1,
-  },
-  cellMissingCount: { color: colors.danger, fontSize: 8, fontWeight: "800" },
-  criticalBadge: {
-    position: "absolute", bottom: 2, right: 2, width: 14, height: 14,
-    backgroundColor: colors.danger, borderRadius: 7, alignItems: "center", justifyContent: "center",
-  },
+  pendingRiskText: { color: colors.warning, fontSize: 8, fontWeight: "900" },
+  cellLeaveCount: { color: colors.leave, fontSize: 10, fontWeight: "900" },
+  cellAttendanceCount: { color: colors.success, fontSize: 10, fontWeight: "900" },
+  cellMissingCount: { color: colors.danger, fontSize: 10, fontWeight: "900" },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,

@@ -681,6 +681,10 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   const [overtimeDays, setOvertimeDays] = useState("");
   const [overtimeReason, setOvertimeReason] = useState("");
   const [grantingCompOff, setGrantingCompOff] = useState(false);
+  const [vacationStart, setVacationStart] = useState(localDateString());
+  const [vacationEnd, setVacationEnd] = useState(localDateString());
+  const [vacationReason, setVacationReason] = useState("Annual vacation assigned by admin");
+  const [assigningVacation, setAssigningVacation] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -697,6 +701,9 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     setOvertimeHours("");
     setOvertimeDays("");
     setOvertimeReason("");
+    setVacationStart(localDateString());
+    setVacationEnd(localDateString());
+    setVacationReason("Annual vacation assigned by admin");
   }, [user]);
 
   if (!user) return null;
@@ -780,6 +787,32 @@ function UserEditModal({ user, onClose, onSaved }: any) {
       Alert.alert("Error", errMsg(e));
     } finally {
       setGrantingCompOff(false);
+    }
+  };
+
+  const assignVacation = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vacationStart.trim()) || !/^\d{4}-\d{2}-\d{2}$/.test(vacationEnd.trim())) {
+      Alert.alert("Invalid dates", "Use YYYY-MM-DD for vacation start and end.");
+      return;
+    }
+    if (!vacationReason.trim()) {
+      Alert.alert("Required", "Enter why this vacation is being assigned.");
+      return;
+    }
+    setAssigningVacation(true);
+    try {
+      const r = await api.post(`/users/${user.id}/vacation`, {
+        start_date: vacationStart.trim(),
+        end_date: vacationEnd.trim(),
+        reason: vacationReason.trim(),
+      });
+      const next = Math.max(0, (parseFloat(annual) || 0) - (r.data.days || 0));
+      setAnnual(String(next));
+      Alert.alert("Vacation scheduled", `${r.data.days} vacation day${r.data.days === 1 ? "" : "s"} approved and locked on the schedule.`);
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setAssigningVacation(false);
     }
   };
 
@@ -876,9 +909,56 @@ function UserEditModal({ user, onClose, onSaved }: any) {
           </View>
 
           <Text style={styles.modalLabel}>Leave Balances</Text>
-          <BalanceEditor testID="balance-annual" label="Annual" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d: number) => adjustBalance("annual", d)} />
+          <BalanceEditor testID="balance-annual" label="Vacation" color={colors.annual} value={annual} setValue={setAnnual} onAdjust={(d: number) => adjustBalance("annual", d)} />
           <BalanceEditor testID="balance-sick" label="Sick" color={colors.sick} value={sick} setValue={setSick} onAdjust={(d: number) => adjustBalance("sick", d)} />
           <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d: number) => adjustBalance("comp_off", d)} />
+
+          <View style={styles.vacationBox}>
+            <Text style={styles.vacationTitle}>ASSIGN APPROVED VACATION</Text>
+            <Text style={styles.vacationHint}>
+              Creates approved vacation leave and locks those dates as Leave on the live schedule calendar.
+            </Text>
+            <View style={styles.overtimeGrid}>
+              <TextInput
+                testID="vacation-start-date"
+                value={vacationStart}
+                onChangeText={setVacationStart}
+                style={styles.overtimeInput}
+                placeholder="Start YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                testID="vacation-end-date"
+                value={vacationEnd}
+                onChangeText={setVacationEnd}
+                style={styles.overtimeInput}
+                placeholder="End YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+            <TextInput
+              testID="vacation-reason"
+              value={vacationReason}
+              onChangeText={setVacationReason}
+              style={styles.overtimeReason}
+              placeholder="Reason / approval note"
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+            <TouchableOpacity
+              testID="vacation-assign-submit"
+              style={[styles.vacationBtn, assigningVacation && { opacity: 0.6 }]}
+              onPress={assignVacation}
+              disabled={assigningVacation}
+            >
+              {assigningVacation ? <ActivityIndicator color={colors.bg} /> : (
+                <>
+                  <Ionicons name="airplane" size={16} color={colors.bg} />
+                  <Text style={styles.grantBtnText}>APPROVE & SCHEDULE VACATION</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.overtimeBox}>
             <Text style={styles.overtimeTitle}>ADD COMP OFF FOR OVERTIME</Text>
@@ -1170,6 +1250,12 @@ const styles = StyleSheet.create({
     marginTop: 12, padding: 12, borderWidth: 1, borderRadius: 4,
     borderColor: colors.compOff, backgroundColor: colors.surfaceHi,
   },
+  vacationBox: {
+    marginTop: 12, padding: 12, borderWidth: 1, borderRadius: 4,
+    borderColor: colors.annual, backgroundColor: colors.surfaceHi,
+  },
+  vacationTitle: { color: colors.annual, fontSize: 11, fontWeight: "800", letterSpacing: 1, marginBottom: 6 },
+  vacationHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 10 },
   overtimeTitle: { color: colors.compOff, fontSize: 11, fontWeight: "800", letterSpacing: 1, marginBottom: 10 },
   overtimeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   overtimeInput: {
@@ -1185,6 +1271,10 @@ const styles = StyleSheet.create({
   grantBtn: {
     height: 44, flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 6, borderRadius: 4, backgroundColor: colors.compOff, marginTop: 10,
+  },
+  vacationBtn: {
+    height: 44, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, borderRadius: 4, backgroundColor: colors.annual, marginTop: 10,
   },
   grantBtnText: { color: colors.bg, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
 });

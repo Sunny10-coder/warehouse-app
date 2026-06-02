@@ -352,14 +352,15 @@ export default function Reports() {
             </View>
 
             {/* Leaves */}
-            <Text style={styles.sectionLabel}>LEAVE USAGE ({monthName})</Text>
+            <Text style={styles.sectionLabel}>LEAVE BALANCE & USAGE ({monthName})</Text>
             {(["annual", "sick", "comp_off", "emergency"] as const).map(k => {
               const s = report.leaves.summary[k];
               const bal = report.leaves.balances[k as "annual" | "sick" | "comp_off"];
+              const title = k === "annual" ? "Vacation" : leaveLabel[k];
               return (
                 <View key={k} style={[styles.leaveRow, { borderLeftColor: leaveColor(k) }]} testID={`report-leave-${k}`}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.leaveTitle, { color: leaveColor(k) }]}>{leaveLabel[k]}</Text>
+                    <Text style={[styles.leaveTitle, { color: leaveColor(k) }]}>{title}</Text>
                     <View style={styles.leaveStats}>
                       <Text style={styles.leaveStatItem}>
                         <Text style={styles.leaveStatBold}>{s.taken}</Text> taken
@@ -414,6 +415,29 @@ export default function Reports() {
                     <Text style={styles.attHours}>{a.hours_worked}h</Text>
                   </View>
                 ))}
+              </>
+            )}
+
+            {report.leaves.records.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>LEAVE RECORDS ({report.leaves.records.length})</Text>
+                {report.leaves.records.slice().reverse().map((lv: any) => {
+                  const c = leaveColor(lv.leave_type);
+                  const title = lv.leave_type === "annual" ? "Vacation" : leaveLabel[lv.leave_type];
+                  const statusColor = lv.status === "approved" ? colors.success : lv.status === "pending" ? colors.warning : colors.danger;
+                  return (
+                    <View key={lv.id} style={[styles.leaveRecordRow, { borderLeftColor: c }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.leaveRecordTitle, { color: c }]}>{title}</Text>
+                        <Text style={styles.leaveRecordMeta}>
+                          {lv.start_date} - {lv.end_date} | {lv.days} day{lv.days === 1 ? "" : "s"}
+                        </Text>
+                        {lv.reason && <Text style={styles.leaveRecordReason}>{lv.reason}</Text>}
+                      </View>
+                      <Text style={[styles.leaveRecordStatus, { color: statusColor }]}>{lv.status.toUpperCase()}</Text>
+                    </View>
+                  );
+                })}
               </>
             )}
           </>
@@ -533,6 +557,14 @@ const styles = StyleSheet.create({
   leaveStats: { flexDirection: "row", gap: 12, marginTop: 4, flexWrap: "wrap" },
   leaveStatItem: { color: colors.textSecondary, fontSize: 12 },
   leaveStatBold: { color: colors.textPrimary, fontWeight: "800" },
+  leaveRecordRow: {
+    flexDirection: "row", alignItems: "center", padding: 12, marginBottom: 6,
+    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4, borderRadius: 4,
+  },
+  leaveRecordTitle: { fontSize: 12, fontWeight: "900", letterSpacing: 0.6 },
+  leaveRecordMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 3 },
+  leaveRecordReason: { color: colors.textPrimary, fontSize: 11, marginTop: 5 },
+  leaveRecordStatus: { fontSize: 10, fontWeight: "900", letterSpacing: 0.8, marginLeft: 8 },
   profileBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 6, padding: 12,
   },
