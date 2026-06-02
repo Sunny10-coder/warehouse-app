@@ -23,6 +23,24 @@ const SHIFT_GROUPS = [
 ];
 
 const ASSIGN_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "sat_day", "sat_night", "sun_day", "sun_night", "off"];
+const ADMIN_ROLES = ["manager", "asst_manager", "document_controller"];
+
+function canAssignShift(user: any, shiftType: string, isSunday: boolean, entries: any[], users: any[]) {
+  if (!user) return false;
+  const isAdminRole = ADMIN_ROLES.includes(user.role);
+  if (!isSunday && (shiftType === "sun_day" || shiftType === "sun_night")) return false;
+  if (isSunday && isAdminRole) return shiftType === "off";
+  if (shiftType !== "sun_day" && shiftType !== "sun_night") return true;
+  if (isAdminRole || user.location === "ega" || !["A", "B"].includes(user.team)) return false;
+  const sameTeamAssigned = entries.some(e => {
+    if (e.user_id === user.id || !["sun_day", "sun_night"].includes(e.shift_type)) return false;
+    const assignedUser = users.find(u => u.id === e.user_id);
+    return assignedUser?.team === user.team;
+  });
+  if (!sameTeamAssigned) return true;
+  const assignedUserIds = entries.filter(e => ["sun_day", "sun_night"].includes(e.shift_type)).map(e => e.user_id);
+  return assignedUserIds.includes(user.id);
+}
 
 export default function ScheduleEdit() {
   const params = useLocalSearchParams<{ date?: string }>();
@@ -76,7 +94,8 @@ export default function ScheduleEdit() {
   const unassigned = users.filter(u => !entries.some(e => e.user_id === u.id));
   const offEntries = entries.filter(e => e.shift_type === "off" || e.shift_type === "leave");
 
-  const shiftDate = new Date(date);
+  const shiftDate = new Date(`${date}T00:00:00`);
+  const isSunday = shiftDate.getDay() === 0;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -120,6 +139,7 @@ export default function ScheduleEdit() {
           const sc = shiftColor(g.key);
           const okCount = g.entries.length;
           const showWarn = g.min > 0 && okCount < g.min;
+          const eligibleCount = users.filter(u => canAssignShift(u, g.key, isSunday, entries, users)).length;
           return (
             <View key={g.key} style={[styles.shiftSection, { borderLeftColor: sc.c }]}>
               <View style={styles.shiftSectionHeader}>
@@ -145,11 +165,12 @@ export default function ScheduleEdit() {
               ))}
               <TouchableOpacity
                 testID={`add-to-${g.key}`}
-                style={styles.addBtn}
+                style={[styles.addBtn, eligibleCount === 0 && { opacity: 0.45 }]}
                 onPress={() => setAssignFor(g.key)}
+                disabled={eligibleCount === 0}
               >
                 <Ionicons name="add" size={16} color={sc.c} />
-                <Text style={[styles.addBtnText, { color: sc.c }]}>ADD STAFF</Text>
+                <Text style={[styles.addBtnText, { color: sc.c }]}>{eligibleCount === 0 ? "NO ELIGIBLE STAFF" : "ADD STAFF"}</Text>
               </TouchableOpacity>
             </View>
           );
@@ -165,12 +186,14 @@ export default function ScheduleEdit() {
                 testID={`unassigned-${p.id}`}
                 style={styles.entryRow}
                 onPress={() => {
+                  const pickedUser = users.find(u => u.id === p.id);
+                  const options = ASSIGN_OPTIONS.filter(s => canAssignShift(pickedUser, s, isSunday, entries, users));
                   Alert.alert(
                     p.name,
                     "Assign to which shift?",
                     [
                       { text: "Cancel", style: "cancel" },
-                      ...ASSIGN_OPTIONS.map(s => ({
+                      ...options.map(s => ({
                         text: shiftLabel[s],
                         onPress: () => changeShift(p.id, s),
                       })),
@@ -197,7 +220,7 @@ export default function ScheduleEdit() {
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 400 }}>
-              {users.map(u => {
+              {users.filter(u => assignFor ? canAssignShift(u, assignFor, isSunday, entries, users) : true).map(u => {
                 const existing = entries.find(e => e.user_id === u.id);
                 return (
                   <TouchableOpacity

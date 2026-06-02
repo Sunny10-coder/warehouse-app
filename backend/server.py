@@ -285,6 +285,7 @@ async def lifespan(app: FastAPI):
     await db.comp_off_grants.create_index("source_id", unique=True, sparse=True)
 
     await _seed_initial_users(db)
+    await _cleanup_admin_sunday_schedules(db)
     logger.info("Warehouse API ready")
     try:
         yield
@@ -381,6 +382,35 @@ async def _seed_initial_users(db) -> None:
             logger.info("Seeded user: %s (%s)", s["email"], s["role"])
         except DuplicateKeyError:
             pass
+
+
+async def _cleanup_admin_sunday_schedules(db) -> None:
+    """Existing data cleanup: admin roles must never be scheduled on Sunday."""
+    admin_users = await db.users.find({"role": {"$in": list(ADMIN_ROLES)}}).to_list(100)
+    cleaned = 0
+    for user_doc in admin_users:
+        docs = await db.schedules.find({"user_id": user_doc["_id"]}).to_list(1000)
+        for sched in docs:
+            try:
+                shift_day = date.fromisoformat(sched["shift_date"])
+            except (KeyError, ValueError):
+                continue
+            if shift_day.weekday() != 6 or sched.get("shift_type") in ("off", "leave"):
+                continue
+            await db.schedules.update_one(
+                {"user_id": user_doc["_id"], "shift_date": sched["shift_date"]},
+                {"$set": {
+                    "shift_type": "off",
+                    "start_time": "",
+                    "end_time": "",
+                    "hours": 0,
+                    "notes": "Auto-corrected: admin roles are off on Sunday",
+                }},
+            )
+            await _revoke_sunday_comp_off(db, user_doc["_id"], sched["shift_date"])
+            cleaned += 1
+    if cleaned:
+        logger.info("Cleaned %s admin Sunday schedule entries", cleaned)
 
 
 # ---------------------------------------------------------------------------
