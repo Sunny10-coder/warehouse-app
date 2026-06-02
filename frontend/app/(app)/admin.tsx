@@ -342,7 +342,7 @@ export default function Admin() {
                 <TouchableOpacity
                   testID="open-schedule-calendar"
                   style={styles.iconCommandBtn}
-                  onPress={() => router.push("/schedule")}
+                  onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart } })}
                 >
                   <Ionicons name="calendar" size={18} color={colors.morning} />
                 </TouchableOpacity>
@@ -441,7 +441,7 @@ export default function Admin() {
                     <TouchableOpacity
                       testID="view-generated-schedule"
                       style={styles.generatedBtn}
-                      onPress={() => router.push("/schedule")}
+                      onPress={() => router.push({ pathname: "/(app)/schedule", params: { start: genStart } })}
                     >
                       <Ionicons name="calendar" size={15} color={colors.bg} />
                       <Text style={styles.generatedBtnText}>VIEW CALENDAR</Text>

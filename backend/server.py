@@ -862,6 +862,18 @@ async def generate_schedule(
 
     days = payload.weeks * 7
     users = await db.users.find({"status": "active"}).to_list(200)
+    end_date = (start + timedelta(days=days - 1)).isoformat()
+    approved_leaves = await db.leaves.find({
+        "status": "approved",
+        "start_date": {"$lte": end_date},
+        "end_date": {"$gte": payload.start_date},
+    }, {"_id": 0}).to_list(5000)
+    approved_leave_days: set[tuple[str, str]] = set()
+    for lv in approved_leaves:
+        for leave_day in _date_range(lv["start_date"], lv["end_date"]):
+            if payload.start_date <= leave_day <= end_date:
+                approved_leave_days.add((lv["user_id"], leave_day))
+
     saturday_teams = [payload.active_saturday_team]
     saturday_teams.append("B" if payload.active_saturday_team == "A" else "A")
 
@@ -896,7 +908,9 @@ async def generate_schedule(
             shift_default = u.get("default_shift")
             shift_type = "off"
 
-            if role in ADMIN_ROLES:
+            if (u["_id"], date_str) in approved_leave_days:
+                shift_type = "leave"
+            elif role in ADMIN_ROLES:
                 if weekday <= 4:  # Mon-Fri
                     shift_type = "admin"
                 elif weekday == 5:  # Saturday

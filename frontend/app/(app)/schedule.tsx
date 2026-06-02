@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
   RefreshControl, FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, router } from "expo-router";
+import { useFocusEffect, router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -22,13 +22,22 @@ function startOfWeek(d = new Date()) {
   return r;
 }
 
+function parseLocalDate(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date();
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function fmtDate(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 export default function Schedule() {
   const { user, isAdmin } = useAuth();
-  const [weekStart, setWeekStart] = useState(startOfWeek());
+  const params = useLocalSearchParams<{ start?: string }>();
+  const [weekStart, setWeekStart] = useState(startOfWeek(parseLocalDate(params.start)));
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
@@ -41,6 +50,18 @@ export default function Schedule() {
       return d;
     });
   }, [weekStart]);
+
+  useEffect(() => {
+    if (params.start) {
+      setWeekStart(startOfWeek(parseLocalDate(params.start)));
+    }
+  }, [params.start]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setViewMode("team");
+    }
+  }, [isAdmin]);
 
   const load = useCallback(async () => {
     setLoading(true);
