@@ -177,6 +177,7 @@ class CompOffGrant(BaseModel):
     reason: str
     granted_by: str
     granted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    source_id: Optional[str] = None
 
 
 class CompOffGrantCreate(BaseModel):
@@ -210,6 +211,8 @@ class GenerateScheduleRequest(BaseModel):
     start_date: str  # Monday YYYY-MM-DD
     weeks: int = 2
     active_saturday_team: str = "A"  # which team works Saturday for week 1
+    sunday_team_a_user_id: Optional[str] = None
+    sunday_team_b_user_id: Optional[str] = None
 
 
 class AttendanceMark(BaseModel):
@@ -279,6 +282,7 @@ async def lifespan(app: FastAPI):
     await db.schedules.create_index([("user_id", 1), ("shift_date", 1)], unique=True)
     await db.attendance.create_index([("user_id", 1), ("attendance_date", 1)], unique=True)
     await db.comp_off_grants.create_index([("user_id", 1), ("earned_date", -1)])
+    await db.comp_off_grants.create_index("source_id", unique=True, sparse=True)
 
     await _seed_initial_users(db)
     logger.info("Warehouse API ready")
@@ -679,6 +683,42 @@ def _times_for(shift_type: str) -> tuple[str, str]:
     return SHIFT_TIMES.get(shift_type, ("", ""))
 
 
+def _sunday_comp_source(user_id: str, shift_date: str) -> str:
+    return f"sunday-duty:{shift_date}:{user_id}"
+
+
+async def _grant_sunday_comp_off(db, user_doc: dict, shift_date: str, admin_name: str) -> bool:
+    source_id = _sunday_comp_source(user_doc["_id"], shift_date)
+    existing = await db.comp_off_grants.find_one({"source_id": source_id})
+    if existing:
+        return False
+    grant = CompOffGrant(
+        user_id=user_doc["_id"],
+        user_name=user_doc["full_name"],
+        earned_date=shift_date,
+        overtime_hours=12,
+        days=1,
+        reason="Sunday duty schedule auto comp off",
+        granted_by=admin_name,
+        source_id=source_id,
+    )
+    try:
+        await db.comp_off_grants.insert_one(grant.dict())
+    except DuplicateKeyError:
+        return False
+    await db.users.update_one({"_id": user_doc["_id"]}, {"$inc": {"comp_off_balance": 1}})
+    return True
+
+
+async def _revoke_sunday_comp_off(db, user_id: str, shift_date: str) -> bool:
+    source_id = _sunday_comp_source(user_id, shift_date)
+    result = await db.comp_off_grants.delete_one({"source_id": source_id})
+    if result.deleted_count:
+        await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": -1}})
+        return True
+    return False
+
+
 @app.get("/api/schedules", response_model=list[ScheduleEntry])
 async def get_schedules(
     start_date: str,
@@ -704,6 +744,7 @@ async def create_or_update_schedule(
     u = await db.users.find_one({"_id": payload.user_id})
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    existing = await db.schedules.find_one({"user_id": u["_id"], "shift_date": payload.shift_date})
     start, end = _times_for(payload.shift_type)
     entry = ScheduleEntry(
         user_id=u["_id"],
@@ -720,13 +761,26 @@ async def create_or_update_schedule(
         {"$set": entry.dict()},
         upsert=True,
     )
+    old_sunday = (existing or {}).get("shift_type") in ("sun_day", "sun_night")
+    new_sunday = payload.shift_type in ("sun_day", "sun_night")
+    comp_changed = False
+    if new_sunday:
+        comp_changed = await _grant_sunday_comp_off(db, u, payload.shift_date, admin["full_name"])
+    elif old_sunday:
+        comp_changed = await _revoke_sunday_comp_off(db, u["_id"], payload.shift_date)
     await realtime.broadcast("schedules", "saved", {"user_id": u["_id"], "date": payload.shift_date})
+    if comp_changed:
+        await realtime.broadcast("users", "comp_off_updated", {"user_id": u["_id"], "date": payload.shift_date})
     return entry
 
 
 @app.delete("/api/schedules/{user_id}/{shift_date}")
 async def delete_schedule(user_id: str, shift_date: str, admin: dict = Depends(require_admin), db=Depends(get_db)):
+    existing = await db.schedules.find_one({"user_id": user_id, "shift_date": shift_date})
     await db.schedules.delete_one({"user_id": user_id, "shift_date": shift_date})
+    if (existing or {}).get("shift_type") in ("sun_day", "sun_night"):
+        if await _revoke_sunday_comp_off(db, user_id, shift_date):
+            await realtime.broadcast("users", "comp_off_updated", {"user_id": user_id, "date": shift_date})
     await realtime.broadcast("schedules", "deleted", {"user_id": user_id, "date": shift_date})
     return {"deleted": True}
 
@@ -745,7 +799,8 @@ async def generate_schedule(
     - Warehouse staff (default_shift in morning/afternoon/night):
       - Mon-Fri: their default_shift
       - Saturday: if their team == active_saturday_team, work 12-hr shift; else off
-      - Sunday: night-shift staff rotate through sun_day/sun_night
+      - Sunday: only the selected Team A and Team B users work; everyone else is off
+      - Sunday duty automatically earns 1 comp-off day for the selected staff
     """
     try:
         start = datetime.strptime(payload.start_date, "%Y-%m-%d").date()
@@ -759,10 +814,23 @@ async def generate_schedule(
     saturday_teams = [payload.active_saturday_team]
     saturday_teams.append("B" if payload.active_saturday_team == "A" else "A")
 
-    night_staff = [u for u in users if u.get("default_shift") == "night" and u.get("location") != "ega"]
-    sunday_idx = 0
+    users_by_id = {u["_id"]: u for u in users}
+    sunday_a = users_by_id.get(payload.sunday_team_a_user_id or "")
+    sunday_b = users_by_id.get(payload.sunday_team_b_user_id or "")
+    if payload.sunday_team_a_user_id and (not sunday_a or sunday_a.get("team") != "A" or sunday_a.get("role") in ADMIN_ROLES):
+        raise HTTPException(status_code=400, detail="Sunday Team A staff must be an active non-admin Team A user")
+    if payload.sunday_team_b_user_id and (not sunday_b or sunday_b.get("team") != "B" or sunday_b.get("role") in ADMIN_ROLES):
+        raise HTTPException(status_code=400, detail="Sunday Team B staff must be an active non-admin Team B user")
+    sunday_assignments = {
+        payload.sunday_team_a_user_id: "sun_day",
+        payload.sunday_team_b_user_id: "sun_night",
+    }
+    sunday_assignments.pop(None, None)
+    sunday_assignments.pop("", None)
 
     generated = 0
+    comp_off_added = 0
+    comp_off_removed = 0
     for i in range(days):
         day = start + timedelta(days=i)
         weekday = day.weekday()  # 0=Mon ... 6=Sun
@@ -800,12 +868,7 @@ async def generate_schedule(
                     else:
                         shift_type = "off"
                 else:  # Sunday
-                    if night_staff and u["_id"] == night_staff[sunday_idx % max(len(night_staff), 1)]["_id"]:
-                        shift_type = "sun_day"
-                    elif len(night_staff) > 1 and u["_id"] == night_staff[(sunday_idx + 1) % len(night_staff)]["_id"]:
-                        shift_type = "sun_night"
-                    else:
-                        shift_type = "off"
+                    shift_type = sunday_assignments.get(u["_id"], "off")
 
             start_t, end_t = _times_for(shift_type)
             entry = {
@@ -820,17 +883,26 @@ async def generate_schedule(
                 "notes": None,
                 "created_at": datetime.now(timezone.utc),
             }
+            existing = await db.schedules.find_one({"user_id": u["_id"], "shift_date": date_str})
             await db.schedules.update_one(
                 {"user_id": u["_id"], "shift_date": date_str},
                 {"$set": entry},
                 upsert=True,
             )
+            old_sunday = (existing or {}).get("shift_type") in ("sun_day", "sun_night")
+            new_sunday = shift_type in ("sun_day", "sun_night")
+            if new_sunday:
+                if await _grant_sunday_comp_off(db, u, date_str, admin["full_name"]):
+                    comp_off_added += 1
+            elif old_sunday:
+                if await _revoke_sunday_comp_off(db, u["_id"], date_str):
+                    comp_off_removed += 1
             generated += 1
-        if weekday == 6:
-            sunday_idx += 2
 
     await realtime.broadcast("schedules", "generated", {"start_date": payload.start_date, "days": days})
-    return {"generated": generated, "days": days}
+    if comp_off_added or comp_off_removed:
+        await realtime.broadcast("users", "comp_off_updated", {"added": comp_off_added, "removed": comp_off_removed})
+    return {"generated": generated, "days": days, "comp_off_added": comp_off_added, "comp_off_removed": comp_off_removed}
 
 
 # ---------------------------------------------------------------------------
@@ -1653,4 +1725,74 @@ async def all_attendance_report(
         "totals": totals,
         "users": users,
         "records": docs,
+    }
+
+
+@app.get("/api/reports/export")
+async def export_report_data(
+    start_date: str,
+    end_date: str,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    """Admin data bundle for frontend Excel-compatible export."""
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+    if end < start:
+        raise HTTPException(status_code=400, detail="End date must be after start date")
+    if (end - start).days > 370:
+        raise HTTPException(status_code=400, detail="Export range cannot exceed 370 days")
+
+    users = await db.users.find({"status": "active"}).sort("full_name", 1).to_list(500)
+    attendance = await db.attendance.find(
+        {"attendance_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0},
+    ).sort([("attendance_date", 1), ("user_name", 1)]).to_list(20000)
+    schedules = await db.schedules.find(
+        {"shift_date": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0},
+    ).sort([("shift_date", 1), ("user_name", 1)]).to_list(20000)
+    leaves = await db.leaves.find(
+        {"start_date": {"$lte": end_date}, "end_date": {"$gte": start_date}},
+        {"_id": 0},
+    ).sort([("start_date", 1), ("user_name", 1)]).to_list(5000)
+
+    user_rows = []
+    for user_doc in users:
+        uid = user_doc["_id"]
+        user_att = [a for a in attendance if a["user_id"] == uid]
+        user_leaves = [lv for lv in leaves if lv["user_id"] == uid]
+        user_rows.append({
+            "user_id": uid,
+            "user_name": user_doc["full_name"],
+            "email": user_doc["email"],
+            "role": user_doc["role"],
+            "team": user_doc.get("team"),
+            "location": user_doc.get("location", "warehouse"),
+            "attendance_records": len(user_att),
+            "present": sum(1 for a in user_att if a["status"] == "present"),
+            "late": sum(1 for a in user_att if a["status"] == "late"),
+            "absent": sum(1 for a in user_att if a["status"] == "absent"),
+            "half_day": sum(1 for a in user_att if a["status"] == "half_day"),
+            "total_hours": round(sum(a.get("hours_worked", 0) for a in user_att), 2),
+            "annual_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["leave_type"] == "annual" and lv["status"] == "approved"),
+            "sick_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["leave_type"] == "sick" and lv["status"] == "approved"),
+            "vacation_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["leave_type"] == "annual" and lv["status"] == "approved"),
+            "comp_off_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["leave_type"] == "comp_off" and lv["status"] == "approved"),
+            "emergency_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["leave_type"] == "emergency" and lv["status"] == "approved"),
+            "pending_leave": sum(lv.get("days", 0) for lv in user_leaves if lv["status"] == "pending"),
+            "annual_balance": user_doc.get("annual_leave_balance", 0),
+            "sick_balance": user_doc.get("sick_leave_balance", 0),
+            "comp_off_balance": user_doc.get("comp_off_balance", 0),
+        })
+
+    return {
+        "range": {"start_date": start_date, "end_date": end_date},
+        "users": user_rows,
+        "attendance": attendance,
+        "schedules": schedules,
+        "leaves": leaves,
     }

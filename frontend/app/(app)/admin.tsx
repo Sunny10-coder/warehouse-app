@@ -32,6 +32,8 @@ export default function Admin() {
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [genStart, setGenStart] = useState("");
   const [genTeam, setGenTeam] = useState<"A" | "B">("A");
+  const [genSundayA, setGenSundayA] = useState("");
+  const [genSundayB, setGenSundayB] = useState("");
   const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
@@ -138,8 +140,13 @@ export default function Admin() {
         start_date: genStart,
         weeks: 2,
         active_saturday_team: genTeam,
+        sunday_team_a_user_id: genSundayA || null,
+        sunday_team_b_user_id: genSundayB || null,
       });
-      Alert.alert("Generated", `${r.data.generated} shift entries over ${r.data.days} days created.`);
+      Alert.alert(
+        "Generated",
+        `${r.data.generated} shift entries over ${r.data.days} days created. Sunday comp off added: ${r.data.comp_off_added || 0}.`,
+      );
     } catch (e) {
       Alert.alert("Error", errMsg(e));
     } finally {
@@ -148,6 +155,8 @@ export default function Admin() {
   };
 
   const pendingUsers = users.filter(u => u.status === "pending");
+  const sundayTeamA = users.filter(u => u.status === "active" && u.role === "employee" && u.team === "A" && u.location !== "ega");
+  const sundayTeamB = users.filter(u => u.status === "active" && u.role === "employee" && u.team === "B" && u.location !== "ega");
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -303,8 +312,8 @@ export default function Admin() {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Auto-Generate Schedule</Text>
               <Text style={styles.helper}>
-                Generates a 2-week schedule for all active staff based on their default shift.
-                Manager off 1st Sat, Asst+DC off 2nd Sat.
+                Generates a 2-week schedule for active staff. Manager, Assistant Manager, and Document Controller stay off Sunday.
+                Choose one Team A and one Team B staff for Sunday duty; each selected staff gets 1 comp off per Sunday duty.
               </Text>
 
               <Text style={styles.modalLabel}>Start Date (must be a Monday)</Text>
@@ -332,6 +341,24 @@ export default function Admin() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={styles.modalLabel}>Sunday Duty - Team A</Text>
+              <StaffSelectRow
+                users={sundayTeamA}
+                selectedId={genSundayA}
+                onSelect={setGenSundayA}
+                emptyText="No Team A staff available"
+                testPrefix="gen-sunday-a"
+              />
+
+              <Text style={styles.modalLabel}>Sunday Duty - Team B</Text>
+              <StaffSelectRow
+                users={sundayTeamB}
+                selectedId={genSundayB}
+                onSelect={setGenSundayB}
+                emptyText="No Team B staff available"
+                testPrefix="gen-sunday-b"
+              />
 
               <TouchableOpacity
                 testID="generate-submit"
@@ -839,6 +866,32 @@ function BalanceEditor({ label, color, value, setValue, onAdjust, testID }: any)
   );
 }
 
+function StaffSelectRow({ users, selectedId, onSelect, emptyText, testPrefix }: any) {
+  if (!users.length) {
+    return <Text style={styles.selectorEmpty}>{emptyText}</Text>;
+  }
+  return (
+    <View style={styles.staffSelectWrap}>
+      {users.map((u: any) => {
+        const active = selectedId === u.id;
+        return (
+          <TouchableOpacity
+            key={u.id}
+            testID={`${testPrefix}-${u.id}`}
+            style={[styles.staffSelectChip, active && styles.staffSelectChipActive]}
+            onPress={() => onSelect(active ? "" : u.id)}
+          >
+            <Text style={[styles.staffSelectName, active && { color: colors.bg }]}>{u.full_name}</Text>
+            <Text style={[styles.staffSelectMeta, active && { color: colors.bg }]}>
+              {u.default_shift ? shiftLabel[u.default_shift] || u.default_shift : "Staff"}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { padding: 20, paddingBottom: 12 },
@@ -906,6 +959,15 @@ const styles = StyleSheet.create({
   },
   teamBtnActive: { backgroundColor: colors.morning, borderColor: colors.morning },
   teamBtnText: { color: colors.textSecondary, fontWeight: "800", letterSpacing: 1 },
+  staffSelectWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  staffSelectChip: {
+    flexGrow: 1, minWidth: 132, padding: 10, borderRadius: 4,
+    borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surfaceHi,
+  },
+  staffSelectChipActive: { backgroundColor: colors.morning, borderColor: colors.morning },
+  staffSelectName: { color: colors.textPrimary, fontSize: 12, fontWeight: "800" },
+  staffSelectMeta: { color: colors.textSecondary, fontSize: 10, marginTop: 2, fontWeight: "700" },
+  selectorEmpty: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
   submitBtn: {
     height: 52, backgroundColor: colors.textPrimary, alignItems: "center", justifyContent: "center",
     borderRadius: 4, marginTop: 16,

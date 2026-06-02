@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal,
+  RefreshControl, Modal, TextInput, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
@@ -9,12 +9,39 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
-import { colors, leaveColor, leaveLabel, roleLabel } from "@/src/theme";
+import { colors, leaveColor, leaveLabel, roleLabel, shiftLabel } from "@/src/theme";
 
 function monthBounds(year: number, month: number) {
   const start = new Date(year, month, 1).toISOString().slice(0, 10);
   const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
   return { start, end };
+}
+
+function datesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const d = new Date(`${start}T00:00:00`);
+  const last = new Date(`${end}T00:00:00`);
+  while (d <= last) {
+    dates.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
+function esc(value: any) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
+  }[ch] || ch));
+}
+
+function table(title: string, headers: string[], rows: any[][]) {
+  return `
+    <h2>${esc(title)}</h2>
+    <table border="1">
+      <thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  `;
 }
 
 export default function Reports() {
@@ -30,6 +57,16 @@ export default function Reports() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-indexed
+  const initialBounds = monthBounds(now.getFullYear(), now.getMonth());
+  const [exportStart, setExportStart] = useState(initialBounds.start);
+  const [exportEnd, setExportEnd] = useState(initialBounds.end);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    const { start, end } = monthBounds(year, month);
+    setExportStart(start);
+    setExportEnd(end);
+  }, [year, month]);
 
   const load = useCallback(async () => {
     if (reportMode === "employee" && !targetId) return;
@@ -68,6 +105,82 @@ export default function Reports() {
   };
   const nextMonth = () => {
     if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1);
+  };
+
+  const exportExcel = async () => {
+    if (!isAdmin) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(exportStart) || !/^\d{4}-\d{2}-\d{2}$/.test(exportEnd)) {
+      Alert.alert("Invalid date", "Use YYYY-MM-DD for start and end date.");
+      return;
+    }
+    setExporting(true);
+    try {
+      const r = await api.get("/reports/export", { params: { start_date: exportStart, end_date: exportEnd } });
+      const data = r.data;
+      const days = datesBetween(exportStart, exportEnd);
+      const scheduleByUserDate = new Map<string, any>();
+      const attendanceByUserDate = new Map<string, any>();
+      data.schedules.forEach((s: any) => scheduleByUserDate.set(`${s.user_id}|${s.shift_date}`, s));
+      data.attendance.forEach((a: any) => attendanceByUserDate.set(`${a.user_id}|${a.attendance_date}`, a));
+
+      const calendarRows = data.users.map((u: any) => [
+        u.user_name,
+        u.team || "",
+        u.role,
+        ...days.map(d => {
+          const s = scheduleByUserDate.get(`${u.user_id}|${d}`);
+          const a = attendanceByUserDate.get(`${u.user_id}|${d}`);
+          const shift = s ? (shiftLabel[s.shift_type] || s.shift_type) : "";
+          const status = a ? a.status : "";
+          const time = a && (a.clock_in || a.clock_out) ? ` ${a.clock_in || "--"}-${a.clock_out || "--"}` : "";
+          return [shift, status, time].filter(Boolean).join(" | ");
+        }),
+      ]);
+
+      const summaryRows = data.users.map((u: any) => [
+        u.user_name, u.email, u.role, u.team || "", u.location,
+        u.attendance_records, u.present, u.late, u.absent, u.half_day, u.total_hours,
+        u.annual_leave, u.sick_leave, u.vacation_leave, u.comp_off_leave, u.emergency_leave, u.pending_leave,
+        u.annual_balance, u.sick_balance, u.comp_off_balance,
+      ]);
+      const attendanceRows = data.attendance.map((a: any) => [
+        a.attendance_date, a.user_name, a.status, a.clock_in || "", a.clock_out || "", a.hours_worked, a.shift_type || "", a.notes || "",
+      ]);
+      const leaveRows = data.leaves.map((lv: any) => [
+        lv.user_name, lv.leave_type, lv.status, lv.start_date, lv.end_date, lv.days, lv.reason || "", lv.approved_by || "",
+      ]);
+
+      const html = `
+        <html><head><meta charset="utf-8" /></head><body>
+          <h1>Warehouse Attendance Report ${esc(exportStart)} to ${esc(exportEnd)}</h1>
+          ${table("Calendar", ["Employee", "Team", "Role", ...days], calendarRows)}
+          ${table("Employee Summary", [
+            "Employee", "Email", "Role", "Team", "Location", "Attendance Records", "Present", "Late", "Absent", "Half Day", "Total Hours",
+            "Annual Leave", "Sick Leave", "Vacation", "Comp Off Leave", "Emergency Leave", "Pending Leave",
+            "Annual Balance", "Sick Balance", "Comp Off Balance",
+          ], summaryRows)}
+          ${table("Attendance Log", ["Date", "Employee", "Status", "Clock In", "Clock Out", "Hours", "Shift", "Notes"], attendanceRows)}
+          ${table("Leaves", ["Employee", "Type", "Status", "Start", "End", "Days", "Reason", "Approved By"], leaveRows)}
+        </body></html>
+      `;
+      if (typeof window === "undefined") {
+        Alert.alert("Web export only", "Open this reports page in browser to download Excel.");
+        return;
+      }
+      const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `warehouse-attendance-${exportStart}-to-${exportEnd}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      Alert.alert("Export failed", errMsg(e));
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -116,6 +229,43 @@ export default function Reports() {
             onPress={() => setReportMode("all")}
           >
             <Text style={[styles.modeText, reportMode === "all" && styles.modeTextActive]}>ALL STAFF</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isAdmin && (
+        <View style={styles.exportBox}>
+          <Text style={styles.exportTitle}>EXCEL EXPORT</Text>
+          <View style={styles.exportInputs}>
+            <TextInput
+              testID="report-export-start"
+              value={exportStart}
+              onChangeText={setExportStart}
+              style={styles.exportInput}
+              placeholder="Start YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+            />
+            <TextInput
+              testID="report-export-end"
+              value={exportEnd}
+              onChangeText={setExportEnd}
+              style={styles.exportInput}
+              placeholder="End YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+          <TouchableOpacity
+            testID="report-export-excel"
+            style={[styles.exportBtn, exporting && { opacity: 0.6 }]}
+            onPress={exportExcel}
+            disabled={exporting}
+          >
+            {exporting ? <ActivityIndicator color={colors.bg} /> : (
+              <>
+                <Ionicons name="download" size={16} color={colors.bg} />
+                <Text style={styles.exportBtnText}>DOWNLOAD EXCEL REPORT</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -351,6 +501,22 @@ const styles = StyleSheet.create({
   modeBtnActive: { backgroundColor: colors.morning, borderColor: colors.morning },
   modeText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   modeTextActive: { color: colors.bg },
+  exportBox: {
+    marginHorizontal: 20, marginTop: 10, padding: 12, backgroundColor: colors.surface,
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+  },
+  exportTitle: { color: colors.textMuted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 8 },
+  exportInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  exportInput: {
+    flexGrow: 1, minWidth: 140, height: 42, backgroundColor: colors.surfaceHi,
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    color: colors.textPrimary, paddingHorizontal: 10, fontSize: 12,
+  },
+  exportBtn: {
+    height: 42, marginTop: 8, borderRadius: 4, backgroundColor: colors.success,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  exportBtnText: { color: colors.bg, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   sectionLabel: { color: colors.textMuted, fontSize: 10, letterSpacing: 2, fontWeight: "700", marginTop: 18, marginBottom: 10 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   statBox: {
