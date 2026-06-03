@@ -200,6 +200,10 @@ class ScheduleEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
     user_name: str
+    avatar_url: Optional[str] = None
+    team: Optional[str] = None
+    role: Optional[str] = None
+    location: Optional[str] = None
     shift_date: str  # YYYY-MM-DD
     shift_type: str  # morning | afternoon | night | admin | sat_day | sat_night | sun_day | sun_night | ega | off | leave
     start_time: str
@@ -871,12 +875,22 @@ async def get_schedules(
     db=Depends(get_db),
 ):
     q = {"shift_date": {"$gte": start_date, "$lte": end_date}}
-    # Non-admins can only view their own schedule for now (still allow team view)
     if user["role"] not in ADMIN_ROLES and user_id and user_id != user["_id"]:
         raise HTTPException(status_code=403, detail="Cannot view other schedules")
     if user_id:
         q["user_id"] = user_id
     docs = await db.schedules.find(q, {"_id": 0}).sort("shift_date", 1).to_list(2000)
+    user_ids = list({d["user_id"] for d in docs})
+    user_docs = await db.users.find({"_id": {"$in": user_ids}}, {
+        "_id": 1, "avatar_url": 1, "team": 1, "role": 1, "location": 1,
+    }).to_list(len(user_ids) or 1)
+    user_map = {u["_id"]: u for u in user_docs}
+    for d in docs:
+        u = user_map.get(d["user_id"], {})
+        d["avatar_url"] = u.get("avatar_url")
+        d["team"] = u.get("team")
+        d["role"] = u.get("role")
+        d["location"] = u.get("location")
     return [ScheduleEntry(**d) for d in docs]
 
 

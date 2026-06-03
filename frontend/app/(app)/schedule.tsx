@@ -44,7 +44,7 @@ export default function Schedule() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
-  const [viewMode, setViewMode] = useState<"mine" | "team">(isAdmin ? "team" : "mine");
+  const [viewMode, setViewMode] = useState<"mine" | "team">("team");
 
   const weekDays = useMemo(() => {
     return Array.from({ length: rangeLength }, (_, i) => {
@@ -76,7 +76,7 @@ export default function Schedule() {
       if (viewMode === "mine") params.user_id = user?.id;
       const [r, u] = await Promise.all([
         api.get("/schedules", { params }),
-        isAdmin ? api.get("/users", { params: { status_filter: "active" } }) : Promise.resolve({ data: user ? [user] : [] }),
+        isAdmin ? api.get("/users", { params: { status_filter: "active" } }) : Promise.resolve({ data: [] }),
       ]);
       setEntries(r.data);
       setUsers(u.data);
@@ -112,7 +112,16 @@ export default function Schedule() {
 
   const sheetUsers = useMemo(() => {
     const idsWithEntries = new Set(entries.map(e => e.user_id));
-    const base = viewMode === "mine" && user ? [user] : users;
+    const entryUsers = Array.from(new Map(entries.map((e: any) => [e.user_id, {
+      id: e.user_id,
+      full_name: e.user_name,
+      avatar_url: e.avatar_url,
+      team: e.team,
+      role: e.role,
+      location: e.location,
+      status: "active",
+    }])).values());
+    const base = viewMode === "mine" && user ? [user] : (isAdmin ? users : entryUsers);
     return base
       .filter((u: any) => viewMode === "mine" || idsWithEntries.has(u.id) || u.status === "active")
       .sort((a: any, b: any) => {
@@ -168,24 +177,22 @@ export default function Schedule() {
         </View>
       </View>
 
-      {isAdmin && (
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            testID="schedule-toggle-mine"
-            onPress={() => setViewMode("mine")}
-            style={[styles.toggleBtn, viewMode === "mine" && styles.toggleBtnActive]}
-          >
-            <Text style={[styles.toggleText, viewMode === "mine" && styles.toggleTextActive]}>MY SHIFTS</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="schedule-toggle-team"
-            onPress={() => setViewMode("team")}
-            style={[styles.toggleBtn, viewMode === "team" && styles.toggleBtnActive]}
-          >
-            <Text style={[styles.toggleText, viewMode === "team" && styles.toggleTextActive]}>ALL TEAM</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          testID="schedule-toggle-mine"
+          onPress={() => setViewMode("mine")}
+          style={[styles.toggleBtn, viewMode === "mine" && styles.toggleBtnActive]}
+        >
+          <Text style={[styles.toggleText, viewMode === "mine" && styles.toggleTextActive]}>MY SHIFTS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="schedule-toggle-team"
+          onPress={() => setViewMode("team")}
+          style={[styles.toggleBtn, viewMode === "team" && styles.toggleBtnActive]}
+        >
+          <Text style={[styles.toggleText, viewMode === "team" && styles.toggleTextActive]}>ALL TEAM</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Week strip */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weekScroll} contentContainerStyle={{ paddingHorizontal: 16 }}>
@@ -314,6 +321,13 @@ export default function Schedule() {
           const sc = shiftColor(item.shift_type);
           return (
             <View style={[styles.entryCard, { borderLeftColor: sc.c }]} testID={`schedule-entry-${item.user_id}`}>
+              {item.avatar_url ? (
+                <Image source={{ uri: item.avatar_url }} style={styles.entryAvatar} />
+              ) : (
+                <View style={styles.entryAvatar}>
+                  <Text style={styles.entryAvatarText}>{String(item.user_name || "?").slice(0, 2).toUpperCase()}</Text>
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.entryName}>{item.user_name}</Text>
                 <Text style={[styles.entryShift, { color: sc.c }]}>
@@ -456,6 +470,12 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", padding: 14, marginBottom: 10,
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4, borderRadius: 6,
   },
+  entryAvatar: {
+    width: 42, height: 42, borderRadius: 5, marginRight: 10,
+    backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
+    alignItems: "center", justifyContent: "center",
+  },
+  entryAvatarText: { color: colors.morning, fontSize: 12, fontWeight: "900" },
   entryName: { color: colors.textPrimary, fontWeight: "700", fontSize: 15 },
   entryShift: { fontSize: 12, fontWeight: "700", marginTop: 2, letterSpacing: 0.5 },
   entryTime: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },

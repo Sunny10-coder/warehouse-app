@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert, Animated,
+  RefreshControl, Modal, TextInput, Alert, Animated, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router } from "expo-router";
@@ -67,6 +67,7 @@ type CalendarData = {
 
 export default function CommandCenter() {
   const { isAdmin, refresh } = useAuth();
+  const { width: viewportWidth } = useWindowDimensions();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-indexed
@@ -81,6 +82,10 @@ export default function CommandCenter() {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const calendarAnim = useRef(new Animated.Value(1)).current;
+  const calendarWidth = Math.min(980, Math.max(330, viewportWidth - 20));
+  const isMobileCalendar = calendarWidth < 620;
+  const dayWidth = calendarWidth / 7;
+  const dayHeight = isMobileCalendar ? 118 : 156;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -176,12 +181,12 @@ export default function CommandCenter() {
         </View>
       </View>
 
-      <View style={styles.monthRow}>
-        <TouchableOpacity testID="cc-prev" style={styles.monthBtn} onPress={prev}>
+      <View style={[styles.monthRow, isMobileCalendar && styles.mobileMonthRow]}>
+        <TouchableOpacity testID="cc-prev" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn]} onPress={prev}>
           <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.monthLabel}>{monthLabel}</Text>
-        <TouchableOpacity testID="cc-next" style={styles.monthBtn} onPress={next}>
+        <Text style={[styles.monthLabel, isMobileCalendar && styles.mobileMonthLabel]}>{monthLabel}</Text>
+        <TouchableOpacity testID="cc-next" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn]} onPress={next}>
           <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
@@ -191,7 +196,7 @@ export default function CommandCenter() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
       >
         {/* Comparison summary */}
-        {data && (
+        {data && !isMobileCalendar && (
           <View style={styles.compareTable}>
             <Text style={styles.sectionTitle}>MONTH AT A GLANCE</Text>
             <View style={styles.compareGrid}>
@@ -212,7 +217,7 @@ export default function CommandCenter() {
           </View>
         )}
 
-        <View style={styles.guideCard}>
+        <View style={[styles.guideCard, isMobileCalendar && styles.mobileHidden]}>
           <View style={styles.guideRow}>
             <LegendItem color={colors.success} label="Covered" />
             <LegendItem color={colors.warning} label="At minimum" />
@@ -232,10 +237,9 @@ export default function CommandCenter() {
             },
           ]}
         >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.calendarCanvas}>
+          <View style={[styles.calendarCanvas, { width: calendarWidth }]}>
               <View style={styles.dowRow}>
-                {DOW.map(d => <Text key={d} style={styles.dowLabel}>{d}</Text>)}
+                {DOW.map(d => <Text key={d} style={[styles.dowLabel, { width: dayWidth }]}>{d}</Text>)}
               </View>
 
               {loading && !data ? (
@@ -243,7 +247,7 @@ export default function CommandCenter() {
               ) : (
                 <View style={styles.grid}>
                   {grid.map((cell, i) => {
-                    if (!cell) return <View key={i} style={[styles.cell, styles.emptyCell]} />;
+                    if (!cell) return <View key={i} style={[styles.cell, styles.emptyCell, { width: dayWidth - 4, minHeight: dayHeight }]} />;
                     const isCritical = cell.status === "critical";
                     const isWarn = cell.status === "warn";
                     const color = isCritical ? colors.danger : isWarn ? colors.warning : colors.success;
@@ -255,18 +259,22 @@ export default function CommandCenter() {
                         key={cell.date}
                         testID={`cc-day-${dayNum}`}
                         activeOpacity={0.78}
-                        style={[styles.cell, { borderColor: color, backgroundColor: bg }]}
+                        style={[
+                          styles.cell,
+                          isMobileCalendar && styles.mobileCell,
+                          { borderColor: color, backgroundColor: bg, width: dayWidth - 4, minHeight: dayHeight },
+                        ]}
                         onPress={() => setSelectedDay(cell)}
                       >
                         <View style={styles.cellTop}>
-                          <Text style={styles.cellDate}>{dayNum}</Text>
-                          <View style={[styles.dayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
-                            <Text style={[styles.dayStatusText, { color }]}>{statusText}</Text>
+                          <Text style={[styles.cellDate, isMobileCalendar && styles.mobileCellDate]}>{dayNum}</Text>
+                          <View style={[styles.dayStatusPill, isMobileCalendar && styles.mobileDayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
+                            <Text style={[styles.dayStatusText, isMobileCalendar && styles.mobileDayStatusText, { color }]}>{statusText}</Text>
                           </View>
                         </View>
-                        <ShiftBoard day={cell} minimum={data?.minimum_coverage} />
-                        <UnavailableStrip day={cell} />
-                        {cell.pending_status !== "ok" && (
+                        <ShiftBoard day={cell} minimum={data?.minimum_coverage} compact={isMobileCalendar} />
+                        <UnavailableStrip day={cell} compact={isMobileCalendar} />
+                        {cell.pending_status !== "ok" && !isMobileCalendar && (
                           <View style={styles.pendingRiskRow}>
                             <Ionicons name="hourglass" size={10} color={colors.warning} />
                             <Text style={styles.pendingRiskText}>Pending leave may reduce coverage</Text>
@@ -278,8 +286,14 @@ export default function CommandCenter() {
                 </View>
               )}
             </View>
-          </ScrollView>
         </Animated.View>
+        {data && isMobileCalendar && (
+          <View style={styles.mobileGuideCard}>
+            <LegendItem color={colors.success} label="Assigned" />
+            <LegendItem color={colors.danger} label="Off / Leave" />
+            <Text style={styles.mobileGuideText}>{data.summary.total_active_staff} staff</Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Day detail modal */}
@@ -563,25 +577,30 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
   { key: "emergency", label: "Emergency", icon: "warning" },
 ];
 
-function ShiftBoard({ day, minimum }: { day: DayCell; minimum?: CalendarData["minimum_coverage"] }) {
+function ShiftBoard({ day, minimum, compact }: { day: DayCell; minimum?: CalendarData["minimum_coverage"]; compact?: boolean }) {
   const rows = shiftRowsForDay(day, minimum);
+  const visibleNames = compact ? 1 : 3;
   return (
     <View style={styles.shiftBoard}>
       {rows.map(row => (
         <View key={row.key} style={styles.shiftLine}>
           <Text style={[styles.shiftLineLabel, { color: row.color }]}>{row.label}</Text>
           <View style={styles.nameChipWrap}>
-            {row.people.slice(0, 3).map(person => (
+            {row.people.slice(0, visibleNames).map(person => (
               <Text
                 key={person.user_id}
                 numberOfLines={1}
-                style={[styles.personChip, { backgroundColor: "rgba(52,199,89,0.30)", borderColor: colors.success }]}
+                style={[
+                  styles.personChip,
+                  compact && styles.mobilePersonChip,
+                  { backgroundColor: "rgba(52,199,89,0.30)", borderColor: colors.success },
+                ]}
               >
                 {shortName(person.user_name)}
               </Text>
             ))}
-            {row.people.length > 3 && (
-              <Text style={[styles.personChip, styles.moreChip]}>+{row.people.length - 3}</Text>
+            {row.people.length > visibleNames && (
+              <Text style={[styles.personChip, compact && styles.mobilePersonChip, styles.moreChip]}>+{row.people.length - visibleNames}</Text>
             )}
             {row.people.length === 0 && <Text style={styles.emptyShift}>No staff</Text>}
           </View>
@@ -594,7 +613,7 @@ function ShiftBoard({ day, minimum }: { day: DayCell; minimum?: CalendarData["mi
   );
 }
 
-function UnavailableStrip({ day }: { day: DayCell }) {
+function UnavailableStrip({ day, compact }: { day: DayCell; compact?: boolean }) {
   const offPeople = [
     ...((day.shifts.off || []).map(p => ({ ...p, reason: "Off" }))),
     ...((day.shifts.leave || []).map(p => ({ ...p, reason: "Leave" }))),
@@ -603,12 +622,16 @@ function UnavailableStrip({ day }: { day: DayCell }) {
   const unique = Array.from(new Map(offPeople.map(p => [p.user_id, p])).values());
   return (
     <View style={styles.unavailableRow}>
-      {unique.slice(0, 2).map(p => (
-        <Text key={p.user_id} numberOfLines={1} style={styles.unavailableChip}>
+      {unique.slice(0, compact ? 1 : 2).map(p => (
+        <Text key={p.user_id} numberOfLines={1} style={[styles.unavailableChip, compact && styles.mobileUnavailableChip]}>
           {shortName(p.user_name)}
         </Text>
       ))}
-      {unique.length > 2 && <Text style={[styles.unavailableChip, styles.moreUnavailable]}>+{unique.length - 2}</Text>}
+      {unique.length > (compact ? 1 : 2) && (
+        <Text style={[styles.unavailableChip, compact && styles.mobileUnavailableChip, styles.moreUnavailable]}>
+          +{unique.length - (compact ? 1 : 2)}
+        </Text>
+      )}
       {unique.length === 0 && <Text style={styles.unavailableEmpty}>No leave/off</Text>}
     </View>
   );
@@ -743,6 +766,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.18)",
   },
   monthLabel: { color: colors.textPrimary, fontWeight: "900", fontSize: 20, minWidth: 150, textAlign: "center" },
+  mobileMonthRow: { marginHorizontal: 10, padding: 8, gap: 8, marginBottom: 8 },
+  mobileMonthBtn: { width: 34, height: 34, borderRadius: 6 },
+  mobileMonthLabel: { fontSize: 16, minWidth: 120 },
   compareTable: {
     margin: 20, marginBottom: 12, padding: 14,
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 6,
@@ -763,6 +789,14 @@ const styles = StyleSheet.create({
   },
   guideRow: { flexDirection: "row", gap: 14, flexWrap: "wrap" },
   guideText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  mobileHidden: { display: "none" },
+  mobileGuideCard: {
+    marginHorizontal: 10, marginTop: 6, marginBottom: 12, padding: 10,
+    borderRadius: 8, backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: "rgba(255,255,255,0.12)", borderWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-around", gap: 8, flexWrap: "wrap",
+  },
+  mobileGuideText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800" },
   legend: { flexDirection: "row", gap: 14, paddingHorizontal: 20, marginBottom: 6, flexWrap: "wrap" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 2 },
@@ -780,12 +814,19 @@ const styles = StyleSheet.create({
     marginHorizontal: 2, marginBottom: 7, justifyContent: "space-between", backgroundColor: "#0C0F13",
     shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
+  mobileCell: {
+    padding: 3, borderRadius: 5, marginHorizontal: 2, marginBottom: 5,
+    shadowOpacity: 0.18, shadowRadius: 4,
+  },
   emptyCell: { backgroundColor: "transparent", borderColor: "transparent" },
   cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
   cellDate: { color: colors.textPrimary, fontSize: 22, fontWeight: "900", lineHeight: 24 },
+  mobileCellDate: { fontSize: 15, lineHeight: 17 },
   cellMonth: { color: colors.textMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 1 },
   dayStatusPill: { minWidth: 43, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderRadius: 4 },
+  mobileDayStatusPill: { minWidth: 25, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 3 },
   dayStatusText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.3, textAlign: "center" },
+  mobileDayStatusText: { fontSize: 6, letterSpacing: 0 },
   shiftBoard: { gap: 4, marginTop: 6 },
   shiftLine: {
     minHeight: 28, flexDirection: "row", alignItems: "flex-start", gap: 4,
@@ -799,6 +840,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3, paddingVertical: 2, color: colors.textPrimary,
     fontSize: 7, fontWeight: "900",
   },
+  mobilePersonChip: {
+    maxWidth: 24, paddingHorizontal: 2, paddingVertical: 1, fontSize: 6,
+  },
   moreChip: { borderColor: colors.border, backgroundColor: colors.surfaceHi, color: colors.textSecondary },
   emptyShift: { color: colors.textMuted, fontSize: 7, fontWeight: "700", paddingTop: 3 },
   shiftCount: { width: 22, textAlign: "right", fontSize: 9, fontWeight: "900", paddingTop: 3 },
@@ -810,6 +854,9 @@ const styles = StyleSheet.create({
     maxWidth: 48, overflow: "hidden", backgroundColor: "rgba(255,59,48,0.32)",
     borderColor: colors.danger, borderWidth: 1, borderRadius: 3,
     color: colors.textPrimary, fontSize: 7, fontWeight: "900", paddingHorizontal: 4, paddingVertical: 2,
+  },
+  mobileUnavailableChip: {
+    maxWidth: 26, paddingHorizontal: 2, paddingVertical: 1, fontSize: 6,
   },
   moreUnavailable: { color: colors.danger, backgroundColor: "rgba(255,59,48,0.12)" },
   unavailableEmpty: { color: colors.textMuted, fontSize: 8, fontWeight: "700" },
