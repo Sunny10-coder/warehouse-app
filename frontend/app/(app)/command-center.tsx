@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert,
+  RefreshControl, Modal, TextInput, Alert, Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router } from "expo-router";
@@ -80,6 +80,7 @@ export default function CommandCenter() {
   const [leaveReason, setLeaveReason] = useState("");
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const calendarAnim = useRef(new Animated.Value(1)).current;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +96,15 @@ export default function CommandCenter() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useRealtimeRefresh(load, ["schedules", "leaves", "users", "attendance"]);
+
+  useEffect(() => {
+    calendarAnim.setValue(0);
+    Animated.timing(calendarAnim, {
+      toValue: 1,
+      duration: 320,
+      useNativeDriver: true,
+    }).start();
+  }, [calendarAnim, year, month, data?.summary.total_scheduled_entries]);
 
   const monthLabel = useMemo(
     () => new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }),
@@ -211,8 +221,18 @@ export default function CommandCenter() {
           </View>
         </View>
 
-        <View style={styles.calendarShell}>
-          <ScrollView horizontal showsHorizontalScrollIndicator>
+        <Animated.View
+          style={[
+            styles.calendarShell,
+            {
+              opacity: calendarAnim,
+              transform: [{
+                translateY: calendarAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }),
+              }],
+            },
+          ]}
+        >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.calendarCanvas}>
               <View style={styles.dowRow}>
                 {DOW.map(d => <Text key={d} style={styles.dowLabel}>{d}</Text>)}
@@ -234,6 +254,7 @@ export default function CommandCenter() {
                       <TouchableOpacity
                         key={cell.date}
                         testID={`cc-day-${dayNum}`}
+                        activeOpacity={0.78}
                         style={[styles.cell, { borderColor: color, backgroundColor: bg }]}
                         onPress={() => setSelectedDay(cell)}
                       >
@@ -258,7 +279,7 @@ export default function CommandCenter() {
               )}
             </View>
           </ScrollView>
-        </View>
+        </Animated.View>
       </ScrollView>
 
       {/* Day detail modal */}
@@ -554,7 +575,7 @@ function ShiftBoard({ day, minimum }: { day: DayCell; minimum?: CalendarData["mi
               <Text
                 key={person.user_id}
                 numberOfLines={1}
-                style={[styles.personChip, { backgroundColor: `${row.color}25`, borderColor: row.color }]}
+                style={[styles.personChip, { backgroundColor: "rgba(52,199,89,0.30)", borderColor: colors.success }]}
               >
                 {shortName(person.user_name)}
               </Text>
@@ -703,24 +724,25 @@ function FooterStat({ icon, label, value, color }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", alignItems: "center", padding: 20, paddingBottom: 12, gap: 12 },
+  container: { flex: 1, backgroundColor: "#05070A" },
+  header: { flexDirection: "row", alignItems: "center", padding: 20, paddingBottom: 10, gap: 12 },
   backBtn: {
-    width: 40, height: 40, alignItems: "center", justifyContent: "center",
-    borderColor: colors.border, borderWidth: 1, borderRadius: 4, backgroundColor: colors.surface,
+    width: 48, height: 48, alignItems: "center", justifyContent: "center",
+    borderColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.04)",
   },
-  overline: { color: colors.textMuted, fontSize: 10, letterSpacing: 2, fontWeight: "700" },
-  title: { color: colors.textPrimary, fontSize: 18, fontWeight: "800", marginTop: 2 },
+  overline: { color: colors.textMuted, fontSize: 10, letterSpacing: 2.4, fontWeight: "800" },
+  title: { color: colors.textPrimary, fontSize: 24, fontWeight: "900", marginTop: 2 },
   monthRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16,
-    padding: 10, marginHorizontal: 20, backgroundColor: colors.surface,
-    borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    padding: 14, marginHorizontal: 20, marginBottom: 10, backgroundColor: "rgba(255,255,255,0.055)",
+    borderColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderRadius: 8,
   },
   monthBtn: {
-    width: 36, height: 36, alignItems: "center", justifyContent: "center",
-    borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    width: 44, height: 44, alignItems: "center", justifyContent: "center",
+    borderColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.18)",
   },
-  monthLabel: { color: colors.textPrimary, fontWeight: "800", fontSize: 14, letterSpacing: 1 },
+  monthLabel: { color: colors.textPrimary, fontWeight: "900", fontSize: 20, minWidth: 150, textAlign: "center" },
   compareTable: {
     margin: 20, marginBottom: 12, padding: 14,
     backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 6,
@@ -736,8 +758,8 @@ const styles = StyleSheet.create({
   minRow: { marginTop: 10, padding: 8, backgroundColor: colors.surfaceHi, borderRadius: 4 },
   minTxt: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
   guideCard: {
-    marginHorizontal: 20, marginBottom: 12, padding: 10, borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.03)", borderColor: colors.border, borderWidth: 1,
+    marginHorizontal: 20, marginBottom: 12, padding: 12, borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.045)", borderColor: "rgba(255,255,255,0.12)", borderWidth: 1,
   },
   guideRow: { flexDirection: "row", gap: 14, flexWrap: "wrap" },
   guideText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
@@ -745,48 +767,49 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 2 },
   legendText: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
-  calendarShell: { marginHorizontal: 10, marginBottom: 18 },
-  calendarCanvas: { minWidth: 1260 },
+  calendarShell: { marginHorizontal: 10, marginBottom: 18, alignItems: "center" },
+  calendarCanvas: { width: 980 },
   dowRow: { flexDirection: "row", marginBottom: 8, paddingHorizontal: 2 },
   dowLabel: {
-    width: "14.28%", textAlign: "center", color: colors.textMuted,
+    width: 140, textAlign: "center", color: colors.textMuted,
     fontSize: 10, fontWeight: "900", letterSpacing: 1,
   },
   grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: {
-    width: "14.28%", minHeight: 218, padding: 9, borderWidth: 1, borderRadius: 6,
-    marginBottom: 7, justifyContent: "space-between", backgroundColor: "#0C0F13",
+    width: 136, minHeight: 156, padding: 7, borderWidth: 1, borderRadius: 8,
+    marginHorizontal: 2, marginBottom: 7, justifyContent: "space-between", backgroundColor: "#0C0F13",
+    shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
   emptyCell: { backgroundColor: "transparent", borderColor: "transparent" },
   cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-  cellDate: { color: colors.textPrimary, fontSize: 25, fontWeight: "900", lineHeight: 28 },
+  cellDate: { color: colors.textPrimary, fontSize: 22, fontWeight: "900", lineHeight: 24 },
   cellMonth: { color: colors.textMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 1 },
-  dayStatusPill: { minWidth: 48, paddingHorizontal: 7, paddingVertical: 4, borderWidth: 1, borderRadius: 4 },
-  dayStatusText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4, textAlign: "center" },
-  shiftBoard: { gap: 5, marginTop: 8 },
+  dayStatusPill: { minWidth: 43, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderRadius: 4 },
+  dayStatusText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.3, textAlign: "center" },
+  shiftBoard: { gap: 4, marginTop: 6 },
   shiftLine: {
-    minHeight: 42, flexDirection: "row", alignItems: "flex-start", gap: 5,
+    minHeight: 28, flexDirection: "row", alignItems: "flex-start", gap: 4,
     borderColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderRadius: 4,
-    paddingHorizontal: 5, paddingVertical: 5, backgroundColor: "rgba(255,255,255,0.025)",
+    paddingHorizontal: 4, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.025)",
   },
-  shiftLineLabel: { width: 32, fontSize: 8, fontWeight: "900", letterSpacing: 0.2, paddingTop: 3 },
-  nameChipWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 3 },
+  shiftLineLabel: { width: 28, fontSize: 7, fontWeight: "900", letterSpacing: 0.2, paddingTop: 3 },
+  nameChipWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 2 },
   personChip: {
-    maxWidth: 58, overflow: "hidden", borderWidth: 1, borderRadius: 3,
-    paddingHorizontal: 4, paddingVertical: 3, color: colors.textPrimary,
-    fontSize: 8, fontWeight: "800",
+    maxWidth: 46, overflow: "hidden", borderWidth: 1, borderRadius: 3,
+    paddingHorizontal: 3, paddingVertical: 2, color: colors.textPrimary,
+    fontSize: 7, fontWeight: "900",
   },
   moreChip: { borderColor: colors.border, backgroundColor: colors.surfaceHi, color: colors.textSecondary },
-  emptyShift: { color: colors.textMuted, fontSize: 8, fontWeight: "700", paddingTop: 3 },
-  shiftCount: { width: 26, textAlign: "right", fontSize: 10, fontWeight: "900", paddingTop: 3 },
+  emptyShift: { color: colors.textMuted, fontSize: 7, fontWeight: "700", paddingTop: 3 },
+  shiftCount: { width: 22, textAlign: "right", fontSize: 9, fontWeight: "900", paddingTop: 3 },
   unavailableRow: {
-    minHeight: 25, marginTop: 7, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 4, borderTopColor: "rgba(255,255,255,0.08)", borderTopWidth: 1, paddingTop: 6,
+    minHeight: 21, marginTop: 6, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 3, borderTopColor: "rgba(255,255,255,0.08)", borderTopWidth: 1, paddingTop: 5,
   },
   unavailableChip: {
-    maxWidth: 65, overflow: "hidden", backgroundColor: "rgba(255,59,48,0.30)",
+    maxWidth: 48, overflow: "hidden", backgroundColor: "rgba(255,59,48,0.32)",
     borderColor: colors.danger, borderWidth: 1, borderRadius: 3,
-    color: colors.textPrimary, fontSize: 8, fontWeight: "800", paddingHorizontal: 5, paddingVertical: 3,
+    color: colors.textPrimary, fontSize: 7, fontWeight: "900", paddingHorizontal: 4, paddingVertical: 2,
   },
   moreUnavailable: { color: colors.danger, backgroundColor: "rgba(255,59,48,0.12)" },
   unavailableEmpty: { color: colors.textMuted, fontSize: 8, fontWeight: "700" },
