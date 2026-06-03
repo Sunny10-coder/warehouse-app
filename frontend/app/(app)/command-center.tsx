@@ -160,77 +160,84 @@ export default function CommandCenter() {
           </View>
         )}
 
-        {/* Legend */}
-        <View style={styles.legend}>
-          <LegendItem color={colors.danger} label="Below min" />
-          <LegendItem color={colors.warning} label="At min" />
-          <LegendItem color={colors.success} label="OK" />
-          <LegendItem color={colors.leave} label="Leave" />
-        </View>
-
-        {/* DOW header */}
-        <View style={styles.dowRow}>
-          {DOW.map(d => <Text key={d} style={styles.dowLabel}>{d}</Text>)}
-        </View>
-
-        {/* Month grid */}
-        {loading && !data ? (
-          <ActivityIndicator color={colors.morning} style={{ marginTop: 40 }} />
-        ) : (
-          <View style={styles.grid}>
-            {grid.map((cell, i) => {
-              if (!cell) return <View key={i} style={[styles.cell, { backgroundColor: "transparent", borderColor: "transparent" }]} />;
-              const isCritical = cell.status === "critical";
-              const isWarn = cell.status === "warn";
-              const color = isCritical ? colors.danger : isWarn ? colors.warning : colors.success;
-              const bg = isCritical ? "rgba(255,59,48,0.16)" : isWarn ? "rgba(255,159,10,0.14)" : colors.surface;
-              const dayNum = parseInt(cell.date.slice(-2), 10);
-              const statusText = isCritical ? "LOW" : isWarn ? "AT MIN" : "OK";
-              return (
-                <TouchableOpacity
-                  key={cell.date}
-                  testID={`cc-day-${dayNum}`}
-                  style={[styles.cell, { borderColor: color, backgroundColor: bg }]}
-                  onPress={() => setSelectedDay(cell)}
-                >
-                  <View style={styles.cellTop}>
-                    <Text style={[styles.cellDate, { color: isCritical ? colors.danger : colors.textPrimary }]}>{dayNum}</Text>
-                    <View style={[styles.dayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
-                      <Text style={[styles.dayStatusText, { color }]}>{statusText}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.cellCoverageStack}>
-                    <CoverageMini label="M" count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
-                    <CoverageMini label="A" count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
-                    <CoverageMini label="N" count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
-                  </View>
-                  <View style={styles.cellMetaRow}>
-                    <View style={styles.cellMetaItem}>
-                      <Ionicons name="airplane" size={10} color={colors.leave} />
-                      <Text style={styles.cellLeaveCount}>{cell.leaves.length}</Text>
-                    </View>
-                    <View style={styles.cellMetaItem}>
-                      <Ionicons name="checkmark-done" size={10} color={colors.success} />
-                      <Text style={styles.cellAttendanceCount}>{cell.attendance_summary.total}</Text>
-                    </View>
-                    <View style={styles.cellMetaItem}>
-                      <Ionicons name="alert-circle" size={10} color={cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted} />
-                      <Text style={[styles.cellMissingCount, { color: cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted }]}>
-                        {cell.roster_summary?.missing || 0}
-                      </Text>
-                    </View>
-                  </View>
-                  {cell.pending_status !== "ok" && (
-                    <View style={styles.pendingRiskDot}>
-                      <Ionicons name="hourglass" size={8} color={colors.warning} />
-                      <Text style={styles.pendingRiskText}>risk</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+        <View style={styles.guideCard}>
+          <View style={styles.guideRow}>
+            <LegendItem color={colors.success} label="Covered" />
+            <LegendItem color={colors.warning} label="At minimum" />
+            <LegendItem color={colors.danger} label="Below minimum" />
           </View>
-        )}
+          <Text style={styles.guideText}>
+            Each date shows Morning, Afternoon, and Night coverage as current staff / minimum required.
+            Bottom counters show Leave, Logs, and Missing attendance.
+          </Text>
+        </View>
+
+        <View style={styles.calendarShell}>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View style={styles.calendarCanvas}>
+              <View style={styles.dowRow}>
+                {DOW.map(d => <Text key={d} style={styles.dowLabel}>{d}</Text>)}
+              </View>
+
+              {loading && !data ? (
+                <ActivityIndicator color={colors.morning} style={{ marginTop: 40 }} />
+              ) : (
+                <View style={styles.grid}>
+                  {grid.map((cell, i) => {
+                    if (!cell) return <View key={i} style={[styles.cell, styles.emptyCell]} />;
+                    const isCritical = cell.status === "critical";
+                    const isWarn = cell.status === "warn";
+                    const color = isCritical ? colors.danger : isWarn ? colors.warning : colors.success;
+                    const bg = isCritical ? "rgba(255,59,48,0.10)" : isWarn ? "rgba(255,159,10,0.10)" : "rgba(20,20,20,0.96)";
+                    const dayNum = parseInt(cell.date.slice(-2), 10);
+                    const statusText = isCritical ? "Below minimum" : isWarn ? "At minimum" : "Covered";
+                    return (
+                      <TouchableOpacity
+                        key={cell.date}
+                        testID={`cc-day-${dayNum}`}
+                        style={[styles.cell, { borderColor: color, backgroundColor: bg }]}
+                        onPress={() => setSelectedDay(cell)}
+                      >
+                        <View style={styles.cellTop}>
+                          <View>
+                            <Text style={styles.cellDate}>{dayNum}</Text>
+                            <Text style={styles.cellMonth}>
+                              {new Date(cell.date).toLocaleDateString(undefined, { month: "short" }).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={[styles.dayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
+                            <Text style={[styles.dayStatusText, { color }]}>{statusText}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.cellCoverageStack}>
+                          <CoverageMini label="Morning" count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
+                          <CoverageMini label="Afternoon" count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
+                          <CoverageMini label="Night" count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
+                        </View>
+                        <View style={styles.cellFooter}>
+                          <FooterStat icon="airplane" label="Leave" value={cell.leaves.length} color={colors.leave} />
+                          <FooterStat icon="checkmark-done" label="Logs" value={cell.attendance_summary.total} color={colors.success} />
+                          <FooterStat
+                            icon="alert-circle"
+                            label="Missing"
+                            value={cell.roster_summary?.missing || 0}
+                            color={cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted}
+                          />
+                        </View>
+                        {cell.pending_status !== "ok" && (
+                          <View style={styles.pendingRiskRow}>
+                            <Ionicons name="hourglass" size={10} color={colors.warning} />
+                            <Text style={styles.pendingRiskText}>Pending leave may reduce coverage</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </View>
       </ScrollView>
 
       {/* Day detail modal */}
@@ -469,11 +476,26 @@ function CoverageItem({ label, count, min, color }: any) {
 function CoverageMini({ label, count, min, color }: any) {
   const low = count < min;
   return (
-    <View style={[styles.coverageMini, { borderColor: low ? colors.danger : color }]}>
-      <Text style={[styles.coverageMiniLabel, { color: low ? colors.danger : color }]}>{label}</Text>
-      <Text style={[styles.cellTinyNum, { color: low ? colors.danger : color }]}>
-        {count}/{min}
-      </Text>
+    <View style={[styles.coverageMini, { borderColor: low ? colors.danger : color, backgroundColor: low ? "rgba(255,59,48,0.08)" : "rgba(255,255,255,0.03)" }]}>
+      <Text style={[styles.coverageMiniLabel, { color: low ? colors.danger : colors.textPrimary }]}>{label}</Text>
+      <View style={styles.coverageMiniRight}>
+        <Text style={[styles.cellTinyNum, { color: low ? colors.danger : color }]}>
+          {count} / {min}
+        </Text>
+        <Text style={[styles.coverageMiniStatus, { color: low ? colors.danger : colors.success }]}>
+          {low ? "LOW" : "OK"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function FooterStat({ icon, label, value, color }: any) {
+  return (
+    <View style={styles.footerStat}>
+      <Ionicons name={icon} size={12} color={color} />
+      <Text style={styles.footerStatLabel}>{label}</Text>
+      <Text style={[styles.footerStatValue, { color }]}>{value}</Text>
     </View>
   );
 }
@@ -511,40 +533,55 @@ const styles = StyleSheet.create({
   compareLabel: { color: colors.textSecondary, fontSize: 10, textAlign: "center" },
   minRow: { marginTop: 10, padding: 8, backgroundColor: colors.surfaceHi, borderRadius: 4 },
   minTxt: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  guideCard: {
+    marginHorizontal: 20, marginBottom: 14, padding: 12, borderRadius: 6,
+    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
+  },
+  guideRow: { flexDirection: "row", gap: 14, flexWrap: "wrap", marginBottom: 8 },
+  guideText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   legend: { flexDirection: "row", gap: 14, paddingHorizontal: 20, marginBottom: 6, flexWrap: "wrap" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 2 },
   legendText: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
-  dowRow: { flexDirection: "row", paddingHorizontal: 12, marginTop: 8, marginBottom: 6 },
-  dowLabel: { flex: 1, textAlign: "center", color: colors.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1 },
-  grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 10 },
+  calendarShell: { marginHorizontal: 12, marginBottom: 18 },
+  calendarCanvas: { minWidth: 1120 },
+  dowRow: { flexDirection: "row", marginBottom: 6 },
+  dowLabel: {
+    width: "14.28%", textAlign: "center", color: colors.textMuted,
+    fontSize: 10, fontWeight: "900", letterSpacing: 1,
+  },
+  grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: {
-    width: "14.28%", height: 116, padding: 7, borderWidth: 1, borderRadius: 4,
-    marginBottom: 4, justifyContent: "space-between",
+    width: "14.28%", minHeight: 184, padding: 10, borderWidth: 1, borderRadius: 6,
+    marginBottom: 6, justifyContent: "space-between",
   },
-  cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 4 },
-  cellDate: { fontSize: 24, fontWeight: "900", lineHeight: 26 },
-  dayStatusPill: { paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderRadius: 3 },
-  dayStatusText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
-  cellCoverageStack: { gap: 4 },
+  emptyCell: { backgroundColor: "transparent", borderColor: "transparent" },
+  cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
+  cellDate: { color: colors.textPrimary, fontSize: 28, fontWeight: "900", lineHeight: 30 },
+  cellMonth: { color: colors.textMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 1 },
+  dayStatusPill: { maxWidth: 88, paddingHorizontal: 7, paddingVertical: 4, borderWidth: 1, borderRadius: 4 },
+  dayStatusText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4, textAlign: "center" },
+  cellCoverageStack: { gap: 6, marginTop: 8 },
   coverageMini: {
-    minHeight: 21, borderWidth: 1, borderRadius: 3, paddingHorizontal: 5,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(0,0,0,0.18)",
-  },
-  coverageMiniLabel: { fontSize: 9, fontWeight: "900" },
-  cellTinyNum: { fontSize: 12, fontWeight: "900" },
-  cellMetaRow: {
+    minHeight: 30, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    borderTopColor: colors.border, borderTopWidth: 1, paddingTop: 4,
   },
-  cellMetaItem: { flexDirection: "row", alignItems: "center", gap: 2 },
-  pendingRiskDot: {
-    position: "absolute", top: 32, right: 6, flexDirection: "row", alignItems: "center", gap: 1,
+  coverageMiniLabel: { fontSize: 11, fontWeight: "900" },
+  coverageMiniRight: { alignItems: "flex-end" },
+  coverageMiniStatus: { fontSize: 8, fontWeight: "900", letterSpacing: 0.5, marginTop: 1 },
+  cellTinyNum: { fontSize: 13, fontWeight: "900" },
+  cellFooter: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderTopColor: colors.border, borderTopWidth: 1, paddingTop: 8, marginTop: 8,
   },
-  pendingRiskText: { color: colors.warning, fontSize: 8, fontWeight: "900" },
-  cellLeaveCount: { color: colors.leave, fontSize: 10, fontWeight: "900" },
-  cellAttendanceCount: { color: colors.success, fontSize: 10, fontWeight: "900" },
-  cellMissingCount: { color: colors.danger, fontSize: 10, fontWeight: "900" },
+  footerStat: { alignItems: "center", gap: 2, minWidth: 38 },
+  footerStatLabel: { color: colors.textMuted, fontSize: 8, fontWeight: "800" },
+  footerStatValue: { fontSize: 12, fontWeight: "900" },
+  pendingRiskRow: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    marginTop: 6, paddingTop: 6, borderTopColor: colors.border, borderTopWidth: 1,
+  },
+  pendingRiskText: { color: colors.warning, fontSize: 9, fontWeight: "800", flex: 1 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,
