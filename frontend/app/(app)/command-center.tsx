@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal,
+  RefreshControl, Modal, TextInput, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router } from "expo-router";
@@ -66,13 +66,20 @@ type CalendarData = {
 };
 
 export default function CommandCenter() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, refresh } = useAuth();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-indexed
   const [data, setData] = useState<CalendarData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<DayCell | null>(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [leaveType, setLeaveType] = useState("annual");
+  const [leaveStart, setLeaveStart] = useState("");
+  const [leaveEnd, setLeaveEnd] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,6 +117,41 @@ export default function CommandCenter() {
   };
   const next = () => {
     if (month === 12) { setMonth(1); setYear(year + 1); } else setMonth(month + 1);
+  };
+
+  const openLeaveForDate = (date: string) => {
+    setLeaveStart(date);
+    setLeaveEnd(date);
+    setLeaveReason("");
+    setLeaveType("annual");
+    setLeaveError(null);
+    setLeaveModalOpen(true);
+  };
+
+  const submitLeave = async () => {
+    if (!leaveStart.trim() || !leaveEnd.trim() || !leaveReason.trim()) {
+      setLeaveError("Select dates and enter the reason.");
+      return;
+    }
+    setLeaveSubmitting(true);
+    setLeaveError(null);
+    try {
+      await api.post("/leaves", {
+        leave_type: leaveType,
+        start_date: leaveStart.trim(),
+        end_date: leaveEnd.trim(),
+        reason: leaveReason.trim(),
+      });
+      setLeaveModalOpen(false);
+      setSelectedDay(null);
+      Alert.alert("Submitted", "Leave request sent for approval.");
+      await load();
+      await refresh();
+    } catch (e) {
+      setLeaveError(errMsg(e));
+    } finally {
+      setLeaveSubmitting(false);
+    }
   };
 
   return (
@@ -165,11 +207,8 @@ export default function CommandCenter() {
             <LegendItem color={colors.success} label="Covered" />
             <LegendItem color={colors.warning} label="At minimum" />
             <LegendItem color={colors.danger} label="Below minimum" />
+            <LegendItem color={colors.danger} label="Off / Leave" />
           </View>
-          <Text style={styles.guideText}>
-            Each date shows Morning, Afternoon, and Night coverage as current staff / minimum required.
-            Bottom counters show Leave, Logs, and Missing attendance.
-          </Text>
         </View>
 
         <View style={styles.calendarShell}>
@@ -190,7 +229,7 @@ export default function CommandCenter() {
                     const color = isCritical ? colors.danger : isWarn ? colors.warning : colors.success;
                     const bg = isCritical ? "rgba(255,59,48,0.10)" : isWarn ? "rgba(255,159,10,0.10)" : "rgba(20,20,20,0.96)";
                     const dayNum = parseInt(cell.date.slice(-2), 10);
-                    const statusText = isCritical ? "Below minimum" : isWarn ? "At minimum" : "Covered";
+                    const statusText = isCritical ? "LOW" : isWarn ? "AT MIN" : "FULL";
                     return (
                       <TouchableOpacity
                         key={cell.date}
@@ -199,31 +238,13 @@ export default function CommandCenter() {
                         onPress={() => setSelectedDay(cell)}
                       >
                         <View style={styles.cellTop}>
-                          <View>
-                            <Text style={styles.cellDate}>{dayNum}</Text>
-                            <Text style={styles.cellMonth}>
-                              {new Date(cell.date).toLocaleDateString(undefined, { month: "short" }).toUpperCase()}
-                            </Text>
-                          </View>
+                          <Text style={styles.cellDate}>{dayNum}</Text>
                           <View style={[styles.dayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
                             <Text style={[styles.dayStatusText, { color }]}>{statusText}</Text>
                           </View>
                         </View>
-                        <View style={styles.cellCoverageStack}>
-                          <CoverageMini label="Morning" count={cell.coverage.morning} min={data?.minimum_coverage.morning || 3} color={colors.morning} />
-                          <CoverageMini label="Afternoon" count={cell.coverage.afternoon} min={data?.minimum_coverage.afternoon || 2} color={colors.afternoon} />
-                          <CoverageMini label="Night" count={cell.coverage.night} min={data?.minimum_coverage.night || 2} color={colors.night} />
-                        </View>
-                        <View style={styles.cellFooter}>
-                          <FooterStat icon="airplane" label="Leave" value={cell.leaves.length} color={colors.leave} />
-                          <FooterStat icon="checkmark-done" label="Logs" value={cell.attendance_summary.total} color={colors.success} />
-                          <FooterStat
-                            icon="alert-circle"
-                            label="Missing"
-                            value={cell.roster_summary?.missing || 0}
-                            color={cell.roster_summary?.missing > 0 ? colors.danger : colors.textMuted}
-                          />
-                        </View>
+                        <ShiftBoard day={cell} minimum={data?.minimum_coverage} />
+                        <UnavailableStrip day={cell} />
                         {cell.pending_status !== "ok" && (
                           <View style={styles.pendingRiskRow}>
                             <Ionicons name="hourglass" size={10} color={colors.warning} />
@@ -266,6 +287,15 @@ export default function CommandCenter() {
                     <Ionicons name="close" size={24} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
+
+                <TouchableOpacity
+                  testID="cc-apply-leave-selected-day"
+                  style={styles.applyLeaveBtn}
+                  onPress={() => openLeaveForDate(selectedDay.date)}
+                >
+                  <Ionicons name="airplane" size={16} color={colors.bg} />
+                  <Text style={styles.applyLeaveBtnText}>APPLY LEAVE FOR THIS DATE</Text>
+                </TouchableOpacity>
 
                 {/* Coverage row */}
                 <View style={styles.covRow}>
@@ -417,8 +447,180 @@ export default function CommandCenter() {
           </ScrollView>
         </View>
       </Modal>
+
+      <Modal visible={leaveModalOpen} transparent animationType="slide" onRequestClose={() => setLeaveModalOpen(false)}>
+        <View style={styles.modalBg}>
+          <View style={styles.leaveModalBox}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalDate}>Apply Leave</Text>
+                <Text style={styles.entryTime}>Submitted requests go to admin approval and update this calendar after approval.</Text>
+              </View>
+              <TouchableOpacity testID="cc-leave-close" onPress={() => setLeaveModalOpen(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSection}>LEAVE TYPE</Text>
+            <View style={styles.leaveTypeGrid}>
+              {LEAVE_TYPES.map(t => {
+                const selected = leaveType === t.key;
+                const c = leaveColor(t.key);
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    testID={`cc-leave-type-${t.key}`}
+                    onPress={() => setLeaveType(t.key)}
+                    style={[styles.leaveTypeChip, selected && { borderColor: c, backgroundColor: `${c}22` }]}
+                  >
+                    <Ionicons name={t.icon} size={14} color={selected ? c : colors.textSecondary} />
+                    <Text style={[styles.leaveTypeText, selected && { color: c }]}>{t.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.inputLabel}>Start Date</Text>
+            <TextInput
+              testID="cc-leave-start"
+              style={styles.modalInput}
+              value={leaveStart}
+              onChangeText={setLeaveStart}
+              placeholder="2026-06-01"
+              placeholderTextColor={colors.textMuted}
+            />
+
+            <Text style={styles.inputLabel}>End Date</Text>
+            <TextInput
+              testID="cc-leave-end"
+              style={styles.modalInput}
+              value={leaveEnd}
+              onChangeText={setLeaveEnd}
+              placeholder="2026-06-01"
+              placeholderTextColor={colors.textMuted}
+            />
+
+            <Text style={styles.inputLabel}>Reason</Text>
+            <TextInput
+              testID="cc-leave-reason"
+              style={[styles.modalInput, styles.reasonInput]}
+              value={leaveReason}
+              onChangeText={setLeaveReason}
+              multiline
+              placeholder="Reason for leave"
+              placeholderTextColor={colors.textMuted}
+            />
+
+            {leaveError && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={styles.errorText}>{leaveError}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              testID="cc-leave-submit"
+              style={[styles.submitLeaveBtn, leaveSubmitting && { opacity: 0.6 }]}
+              onPress={submitLeave}
+              disabled={leaveSubmitting}
+            >
+              {leaveSubmitting ? <ActivityIndicator color={colors.bg} /> : (
+                <Text style={styles.submitLeaveBtnText}>SUBMIT LEAVE REQUEST</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
+}
+
+const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
+  { key: "annual", label: "Vacation", icon: "airplane" },
+  { key: "sick", label: "Sick", icon: "medkit" },
+  { key: "comp_off", label: "Comp Off", icon: "swap-horizontal" },
+  { key: "emergency", label: "Emergency", icon: "warning" },
+];
+
+function ShiftBoard({ day, minimum }: { day: DayCell; minimum?: CalendarData["minimum_coverage"] }) {
+  const rows = shiftRowsForDay(day, minimum);
+  return (
+    <View style={styles.shiftBoard}>
+      {rows.map(row => (
+        <View key={row.key} style={styles.shiftLine}>
+          <Text style={[styles.shiftLineLabel, { color: row.color }]}>{row.label}</Text>
+          <View style={styles.nameChipWrap}>
+            {row.people.slice(0, 3).map(person => (
+              <Text
+                key={person.user_id}
+                numberOfLines={1}
+                style={[styles.personChip, { backgroundColor: `${row.color}25`, borderColor: row.color }]}
+              >
+                {shortName(person.user_name)}
+              </Text>
+            ))}
+            {row.people.length > 3 && (
+              <Text style={[styles.personChip, styles.moreChip]}>+{row.people.length - 3}</Text>
+            )}
+            {row.people.length === 0 && <Text style={styles.emptyShift}>No staff</Text>}
+          </View>
+          <Text style={[styles.shiftCount, { color: row.ok ? colors.success : colors.danger }]}>
+            {row.people.length}/{row.min}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function UnavailableStrip({ day }: { day: DayCell }) {
+  const offPeople = [
+    ...((day.shifts.off || []).map(p => ({ ...p, reason: "Off" }))),
+    ...((day.shifts.leave || []).map(p => ({ ...p, reason: "Leave" }))),
+    ...day.leaves.map(l => ({ user_id: l.user_id, user_name: l.user_name, reason: leaveLabel[l.leave_type] || "Leave" })),
+  ];
+  const unique = Array.from(new Map(offPeople.map(p => [p.user_id, p])).values());
+  return (
+    <View style={styles.unavailableRow}>
+      {unique.slice(0, 2).map(p => (
+        <Text key={p.user_id} numberOfLines={1} style={styles.unavailableChip}>
+          {shortName(p.user_name)}
+        </Text>
+      ))}
+      {unique.length > 2 && <Text style={[styles.unavailableChip, styles.moreUnavailable]}>+{unique.length - 2}</Text>}
+      {unique.length === 0 && <Text style={styles.unavailableEmpty}>No leave/off</Text>}
+    </View>
+  );
+}
+
+function shiftRowsForDay(day: DayCell, minimum?: CalendarData["minimum_coverage"]) {
+  const sunMode = day.shifts.sun_day?.length || day.shifts.sun_night?.length;
+  const satMode = day.weekday === 5 && (day.shifts.sat_day?.length || day.shifts.sat_night?.length);
+  const base = sunMode
+    ? [
+      { key: "sun_day", label: "DAY", color: colors.morning, min: 1 },
+      { key: "sun_night", label: "NIGHT", color: colors.night, min: 1 },
+    ]
+    : satMode
+      ? [
+        { key: "sat_day", label: "DAY", color: colors.morning, min: 1 },
+        { key: "sat_night", label: "NIGHT", color: colors.night, min: 1 },
+      ]
+      : [
+        { key: "morning", label: "MOR", color: colors.morning, min: minimum?.morning || 3 },
+        { key: "afternoon", label: "AFT", color: colors.afternoon, min: minimum?.afternoon || 2 },
+        { key: "night", label: "NIGHT", color: colors.night, min: minimum?.night || 2 },
+      ];
+  return base.map(row => {
+    const people = day.shifts[row.key] || [];
+    return { ...row, people, ok: people.length >= row.min };
+  });
+}
+
+function shortName(name: string) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "Staff";
+  return parts[0].length <= 5 ? `${parts[0]} ${parts[1]?.[0] || ""}`.trim() : parts[0];
 }
 
 function rosterState(row: DayCell["roster"][number]) {
@@ -534,33 +736,60 @@ const styles = StyleSheet.create({
   minRow: { marginTop: 10, padding: 8, backgroundColor: colors.surfaceHi, borderRadius: 4 },
   minTxt: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
   guideCard: {
-    marginHorizontal: 20, marginBottom: 14, padding: 12, borderRadius: 6,
-    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
+    marginHorizontal: 20, marginBottom: 12, padding: 10, borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.03)", borderColor: colors.border, borderWidth: 1,
   },
-  guideRow: { flexDirection: "row", gap: 14, flexWrap: "wrap", marginBottom: 8 },
+  guideRow: { flexDirection: "row", gap: 14, flexWrap: "wrap" },
   guideText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   legend: { flexDirection: "row", gap: 14, paddingHorizontal: 20, marginBottom: 6, flexWrap: "wrap" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 2 },
   legendText: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
-  calendarShell: { marginHorizontal: 12, marginBottom: 18 },
-  calendarCanvas: { minWidth: 1120 },
-  dowRow: { flexDirection: "row", marginBottom: 6 },
+  calendarShell: { marginHorizontal: 10, marginBottom: 18 },
+  calendarCanvas: { minWidth: 1260 },
+  dowRow: { flexDirection: "row", marginBottom: 8, paddingHorizontal: 2 },
   dowLabel: {
     width: "14.28%", textAlign: "center", color: colors.textMuted,
     fontSize: 10, fontWeight: "900", letterSpacing: 1,
   },
   grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: {
-    width: "14.28%", minHeight: 184, padding: 10, borderWidth: 1, borderRadius: 6,
-    marginBottom: 6, justifyContent: "space-between",
+    width: "14.28%", minHeight: 218, padding: 9, borderWidth: 1, borderRadius: 6,
+    marginBottom: 7, justifyContent: "space-between", backgroundColor: "#0C0F13",
   },
   emptyCell: { backgroundColor: "transparent", borderColor: "transparent" },
   cellTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-  cellDate: { color: colors.textPrimary, fontSize: 28, fontWeight: "900", lineHeight: 30 },
+  cellDate: { color: colors.textPrimary, fontSize: 25, fontWeight: "900", lineHeight: 28 },
   cellMonth: { color: colors.textMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginTop: 1 },
-  dayStatusPill: { maxWidth: 88, paddingHorizontal: 7, paddingVertical: 4, borderWidth: 1, borderRadius: 4 },
+  dayStatusPill: { minWidth: 48, paddingHorizontal: 7, paddingVertical: 4, borderWidth: 1, borderRadius: 4 },
   dayStatusText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4, textAlign: "center" },
+  shiftBoard: { gap: 5, marginTop: 8 },
+  shiftLine: {
+    minHeight: 42, flexDirection: "row", alignItems: "flex-start", gap: 5,
+    borderColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 5, backgroundColor: "rgba(255,255,255,0.025)",
+  },
+  shiftLineLabel: { width: 32, fontSize: 8, fontWeight: "900", letterSpacing: 0.2, paddingTop: 3 },
+  nameChipWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 3 },
+  personChip: {
+    maxWidth: 58, overflow: "hidden", borderWidth: 1, borderRadius: 3,
+    paddingHorizontal: 4, paddingVertical: 3, color: colors.textPrimary,
+    fontSize: 8, fontWeight: "800",
+  },
+  moreChip: { borderColor: colors.border, backgroundColor: colors.surfaceHi, color: colors.textSecondary },
+  emptyShift: { color: colors.textMuted, fontSize: 8, fontWeight: "700", paddingTop: 3 },
+  shiftCount: { width: 26, textAlign: "right", fontSize: 10, fontWeight: "900", paddingTop: 3 },
+  unavailableRow: {
+    minHeight: 25, marginTop: 7, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 4, borderTopColor: "rgba(255,255,255,0.08)", borderTopWidth: 1, paddingTop: 6,
+  },
+  unavailableChip: {
+    maxWidth: 65, overflow: "hidden", backgroundColor: "rgba(255,59,48,0.30)",
+    borderColor: colors.danger, borderWidth: 1, borderRadius: 3,
+    color: colors.textPrimary, fontSize: 8, fontWeight: "800", paddingHorizontal: 5, paddingVertical: 3,
+  },
+  moreUnavailable: { color: colors.danger, backgroundColor: "rgba(255,59,48,0.12)" },
+  unavailableEmpty: { color: colors.textMuted, fontSize: 8, fontWeight: "700" },
   cellCoverageStack: { gap: 6, marginTop: 8 },
   coverageMini: {
     minHeight: 30, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8,
@@ -591,6 +820,38 @@ const styles = StyleSheet.create({
   modalDate: { color: colors.textPrimary, fontWeight: "800", fontSize: 18 },
   modalStatus: { fontSize: 11, fontWeight: "800", letterSpacing: 1, marginTop: 4 },
   modalSection: { color: colors.textMuted, fontSize: 10, fontWeight: "800", letterSpacing: 1, marginTop: 14, marginBottom: 8 },
+  applyLeaveBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    backgroundColor: colors.textPrimary, minHeight: 44, borderRadius: 5, marginBottom: 12,
+  },
+  applyLeaveBtnText: { color: colors.bg, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  leaveModalBox: {
+    backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,
+    borderRightWidth: 1, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, maxHeight: "92%",
+  },
+  leaveTypeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
+  leaveTypeChip: {
+    flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 9,
+    borderColor: colors.border, borderWidth: 1, borderRadius: 4, backgroundColor: colors.surfaceHi,
+  },
+  leaveTypeText: { color: colors.textSecondary, fontSize: 12, fontWeight: "800" },
+  inputLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 0.8, marginTop: 8, marginBottom: 5 },
+  modalInput: {
+    minHeight: 46, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
+    borderRadius: 5, color: colors.textPrimary, paddingHorizontal: 12, fontSize: 14,
+  },
+  reasonInput: { height: 82, paddingTop: 10, textAlignVertical: "top" },
+  errorBox: {
+    flexDirection: "row", alignItems: "center", gap: 8, padding: 10,
+    backgroundColor: "rgba(255,59,48,0.1)", borderColor: colors.danger, borderWidth: 1,
+    borderRadius: 4, marginTop: 10,
+  },
+  errorText: { color: colors.danger, fontSize: 12, flex: 1 },
+  submitLeaveBtn: {
+    height: 50, backgroundColor: colors.textPrimary, alignItems: "center", justifyContent: "center",
+    borderRadius: 5, marginTop: 14,
+  },
+  submitLeaveBtnText: { color: colors.bg, fontWeight: "900", letterSpacing: 1.2, fontSize: 12 },
   covRow: { flexDirection: "row", justifyContent: "space-around", paddingVertical: 12 },
   covItem: { alignItems: "center", gap: 4 },
   covCircle: {
