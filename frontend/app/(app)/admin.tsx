@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert, Platform,
+  RefreshControl, Modal, TextInput, Alert, Platform, Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
@@ -285,9 +285,13 @@ export default function Admin() {
                 style={styles.userRow}
                 onPress={() => setEditUser(u)}
               >
-                <View style={styles.userAvatar}>
-                  <Text style={styles.userAvatarText}>{u.full_name.slice(0, 2).toUpperCase()}</Text>
-                </View>
+                {u.avatar_url ? (
+                  <Image source={{ uri: u.avatar_url }} style={styles.userAvatar} />
+                ) : (
+                  <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>{u.full_name.slice(0, 2).toUpperCase()}</Text>
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.userName}>{u.full_name}</Text>
                   <Text style={styles.userMeta}>
@@ -522,6 +526,7 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [role, setRole] = useState("employee");
   const [team, setTeam] = useState("A");
   const [location, setLocation] = useState("warehouse");
@@ -541,10 +546,12 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
         role,
         team: role === "document_controller" ? null : team,
         location,
+        avatar_url: avatarUrl.trim() || null,
       });
       setFullName("");
       setEmail("");
       setPassword("");
+      setAvatarUrl("");
       setRole("employee");
       setTeam("A");
       setLocation("warehouse");
@@ -597,6 +604,17 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
             style={styles.modalInput}
             placeholder="Give this to the employee"
             placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.modalLabel}>Profile Photo URL</Text>
+          <TextInput
+            testID="create-user-avatar"
+            value={avatarUrl}
+            onChangeText={setAvatarUrl}
+            style={styles.modalInput}
+            placeholder="https://example.com/photo.jpg"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
           />
 
           <Text style={styles.modalLabel}>Role</Text>
@@ -668,6 +686,7 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
 function UserEditModal({ user, onClose, onSaved }: any) {
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [email, setEmail] = useState(user?.email || "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
   const [password, setPassword] = useState("");
   const [shift, setShift] = useState(user?.default_shift || "morning");
   const [team, setTeam] = useState(user?.team || "");
@@ -690,6 +709,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     if (!user) return;
     setFullName(user.full_name || "");
     setEmail(user.email || "");
+    setAvatarUrl(user.avatar_url || "");
     setPassword("");
     setShift(user.default_shift || "morning");
     setTeam(user.team || "");
@@ -718,6 +738,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
       const payload: any = {
         full_name: fullName,
         email: email.trim(),
+        avatar_url: avatarUrl.trim() || null,
         default_shift: shift,
         team: team || null,
         location,
@@ -848,6 +869,26 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             autoCapitalize="none"
             keyboardType="email-address"
           />
+
+          <Text style={styles.modalLabel}>Profile Photo URL</Text>
+          <View style={styles.avatarEditRow}>
+            {avatarUrl.trim() ? (
+              <Image source={{ uri: avatarUrl.trim() }} style={styles.avatarPreview} />
+            ) : (
+              <View style={styles.avatarPreview}>
+                <Text style={styles.avatarPreviewText}>{fullName.slice(0, 2).toUpperCase()}</Text>
+              </View>
+            )}
+            <TextInput
+              testID="edit-avatar-url"
+              value={avatarUrl}
+              onChangeText={setAvatarUrl}
+              style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
+              placeholder="https://example.com/photo.jpg"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+            />
+          </View>
 
           <Text style={styles.modalLabel}>New Login Password</Text>
           <TextInput
@@ -1174,6 +1215,12 @@ const styles = StyleSheet.create({
     height: 48, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1,
     borderRadius: 4, color: colors.textPrimary, paddingHorizontal: 14, marginBottom: 8, fontSize: 15,
   },
+  avatarEditRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  avatarPreview: {
+    width: 48, height: 48, borderRadius: 4, backgroundColor: colors.surfaceHi,
+    borderColor: colors.border, borderWidth: 1, alignItems: "center", justifyContent: "center",
+  },
+  avatarPreviewText: { color: colors.morning, fontSize: 13, fontWeight: "900" },
   teamRow: { flexDirection: "row", gap: 8 },
   teamBtn: {
     flex: 1, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 4,

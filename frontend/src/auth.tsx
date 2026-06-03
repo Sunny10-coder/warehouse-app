@@ -10,6 +10,7 @@ export type User = {
   team?: string | null;
   location: "warehouse" | "ega";
   default_shift?: string | null;
+  avatar_url?: string | null;
   annual_leave_balance: number;
   sick_leave_balance: number;
   comp_off_balance: number;

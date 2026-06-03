@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, FlatList,
+  RefreshControl, FlatList, Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router, useLocalSearchParams } from "expo-router";
@@ -41,6 +41,7 @@ export default function Schedule() {
   const rangeLength = rangeWeeks * 7;
   const [weekStart, setWeekStart] = useState(startOfWeek(parseLocalDate(params.start)));
   const [entries, setEntries] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
   const [viewMode, setViewMode] = useState<"mine" | "team">(isAdmin ? "team" : "mine");
@@ -73,14 +74,18 @@ export default function Schedule() {
       const end = fmtDate(weekDays[weekDays.length - 1]);
       const params: any = { start_date: start, end_date: end };
       if (viewMode === "mine") params.user_id = user?.id;
-      const r = await api.get("/schedules", { params });
+      const [r, u] = await Promise.all([
+        api.get("/schedules", { params }),
+        isAdmin ? api.get("/users", { params: { status_filter: "active" } }) : Promise.resolve({ data: user ? [user] : [] }),
+      ]);
       setEntries(r.data);
+      setUsers(u.data);
     } catch (e) {
       console.warn(errMsg(e));
     } finally {
       setLoading(false);
     }
-  }, [weekDays, viewMode, user?.id]);
+  }, [weekDays, viewMode, user, isAdmin]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useRealtimeRefresh(load, ["schedules", "leaves", "users"]);
@@ -98,6 +103,23 @@ export default function Schedule() {
     dayEntries.forEach(e => { c[e.shift_type] = (c[e.shift_type] || 0) + 1; });
     return c;
   }, [dayEntries]);
+
+  const entriesByUserDate = useMemo(() => {
+    const map = new Map<string, any>();
+    entries.forEach(e => map.set(`${e.user_id}|${e.shift_date}`, e));
+    return map;
+  }, [entries]);
+
+  const sheetUsers = useMemo(() => {
+    const idsWithEntries = new Set(entries.map(e => e.user_id));
+    const base = viewMode === "mine" && user ? [user] : users;
+    return base
+      .filter((u: any) => viewMode === "mine" || idsWithEntries.has(u.id) || u.status === "active")
+      .sort((a: any, b: any) => {
+        const teamSort = String(a.team || "").localeCompare(String(b.team || ""));
+        return teamSort || String(a.full_name || "").localeCompare(String(b.full_name || ""));
+      });
+  }, [entries, users, viewMode, user]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -195,6 +217,69 @@ export default function Schedule() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
         ListHeaderComponent={
           <View>
+            <Text style={styles.sheetTitle}>Schedule Sheet</Text>
+            <Text style={styles.sheetHint}>Scroll sideways to view all days. Tap a day column to open that day below.</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sheetScroll}>
+              <View>
+                <View style={styles.sheetHeaderRow}>
+                  <View style={styles.sheetNameHeader}>
+                    <Text style={styles.sheetHeaderText}>EMPLOYEE</Text>
+                  </View>
+                  {weekDays.map((d, i) => {
+                    const active = selectedDay === i;
+                    return (
+                      <TouchableOpacity
+                        key={fmtDate(d)}
+                        style={[styles.sheetDayHeader, active && styles.sheetDayHeaderActive]}
+                        onPress={() => setSelectedDay(i)}
+                      >
+                        <Text style={[styles.sheetDow, active && { color: colors.bg }]}>{DAY_LABELS[i % 7]}</Text>
+                        <Text style={[styles.sheetDayNum, active && { color: colors.bg }]}>{d.getDate()}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {sheetUsers.map((u: any) => (
+                  <View key={u.id} style={styles.sheetRow}>
+                    <View style={styles.sheetNameCell}>
+                      {u.avatar_url ? (
+                        <Image source={{ uri: u.avatar_url }} style={styles.sheetAvatar} />
+                      ) : (
+                        <View style={styles.sheetAvatar}>
+                          <Text style={styles.sheetAvatarText}>{String(u.full_name || "?").slice(0, 2).toUpperCase()}</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.sheetName}>{u.full_name}</Text>
+                        <Text style={styles.sheetMeta}>
+                          {u.team ? `TEAM ${u.team}` : "ADMIN"} {u.location === "ega" ? "· EGA" : ""}
+                        </Text>
+                      </View>
+                    </View>
+                    {weekDays.map((d, i) => {
+                      const dateKey = fmtDate(d);
+                      const entry = entriesByUserDate.get(`${u.id}|${dateKey}`);
+                      const sc = shiftColor(entry?.shift_type || "off");
+                      return (
+                        <TouchableOpacity
+                          key={`${u.id}-${dateKey}`}
+                          style={[styles.sheetShiftCell, { borderColor: sc.c, backgroundColor: entry ? sc.bg : colors.surface }]}
+                          onPress={() => setSelectedDay(i)}
+                        >
+                          <Text style={[styles.sheetShiftText, { color: sc.c }]}>
+                            {shortShift(entry?.shift_type)}
+                          </Text>
+                          {entry?.start_time ? (
+                            <Text style={styles.sheetTimeText}>{entry.start_time}-{entry.end_time}</Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
             <Text style={styles.dayTitle}>
               {weekDays[selectedDay].toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
             </Text>
@@ -276,6 +361,23 @@ function shiftIcon(t: string): any {
   }
 }
 
+function shortShift(t?: string | null) {
+  switch (t) {
+    case "morning": return "MOR";
+    case "afternoon": return "AFT";
+    case "night": return "NGT";
+    case "admin": return "ADM";
+    case "sat_day": return "SAT D";
+    case "sat_night": return "SAT N";
+    case "sun_day": return "SUN D";
+    case "sun_night": return "SUN N";
+    case "ega": return "EGA";
+    case "leave": return "LEAVE";
+    case "off": return "OFF";
+    default: return "OFF";
+  }
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", padding: 20, paddingBottom: 12, alignItems: "flex-end" },
@@ -310,6 +412,43 @@ const styles = StyleSheet.create({
   dayNum: { color: colors.textPrimary, fontSize: 20, fontWeight: "800", marginTop: 4 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.morning, marginTop: 4 },
   dayTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: "700", marginBottom: 10 },
+  sheetTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: "900", marginBottom: 4 },
+  sheetHint: { color: colors.textSecondary, fontSize: 12, marginBottom: 10 },
+  sheetScroll: {
+    marginBottom: 18, borderColor: colors.border, borderWidth: 1, borderRadius: 6,
+    backgroundColor: colors.surface,
+  },
+  sheetHeaderRow: { flexDirection: "row", backgroundColor: colors.surfaceHi },
+  sheetNameHeader: {
+    width: 190, minHeight: 58, paddingHorizontal: 10, justifyContent: "center",
+    borderRightColor: colors.border, borderRightWidth: 1,
+  },
+  sheetHeaderText: { color: colors.textMuted, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  sheetDayHeader: {
+    width: 112, minHeight: 58, alignItems: "center", justifyContent: "center",
+    borderRightColor: colors.border, borderRightWidth: 1,
+  },
+  sheetDayHeaderActive: { backgroundColor: colors.morning },
+  sheetDow: { color: colors.textMuted, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  sheetDayNum: { color: colors.textPrimary, fontSize: 22, fontWeight: "900", marginTop: 2 },
+  sheetRow: { flexDirection: "row", borderTopColor: colors.border, borderTopWidth: 1 },
+  sheetNameCell: {
+    width: 190, minHeight: 68, flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 10, borderRightColor: colors.border, borderRightWidth: 1,
+  },
+  sheetAvatar: {
+    width: 38, height: 38, borderRadius: 4, backgroundColor: colors.surfaceHi,
+    borderColor: colors.border, borderWidth: 1, alignItems: "center", justifyContent: "center",
+  },
+  sheetAvatarText: { color: colors.morning, fontSize: 11, fontWeight: "900" },
+  sheetName: { color: colors.textPrimary, fontSize: 12, fontWeight: "900" },
+  sheetMeta: { color: colors.textMuted, fontSize: 9, fontWeight: "800", marginTop: 2 },
+  sheetShiftCell: {
+    width: 112, minHeight: 68, padding: 7, justifyContent: "center",
+    borderRightWidth: 1, borderLeftWidth: 0, borderTopWidth: 0, borderBottomWidth: 0,
+  },
+  sheetShiftText: { fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  sheetTimeText: { color: colors.textSecondary, fontSize: 10, fontWeight: "700", marginTop: 4 },
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   summaryChip: { paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderRadius: 2 },
   summaryChipText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },

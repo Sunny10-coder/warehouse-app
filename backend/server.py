@@ -125,6 +125,7 @@ class UserCreate(BaseModel):
     role: str = "employee"  # employee | manager | asst_manager | document_controller
     team: Optional[str] = None  # "A" | "B" | None (for admins)
     location: str = "warehouse"  # warehouse | ega
+    avatar_url: Optional[str] = None
 
 
 class UserPublic(BaseModel):
@@ -136,6 +137,7 @@ class UserPublic(BaseModel):
     team: Optional[str] = None
     location: str = "warehouse"
     default_shift: Optional[str] = None
+    avatar_url: Optional[str] = None
     annual_leave_balance: float = 30
     sick_leave_balance: float = 12
     comp_off_balance: float = 0
@@ -162,6 +164,7 @@ class UserUpdate(BaseModel):
     location: Optional[str] = None
     default_shift: Optional[str] = None
     status: Optional[str] = None
+    avatar_url: Optional[str] = None
     annual_leave_balance: Optional[float] = None
     sick_leave_balance: Optional[float] = None
     comp_off_balance: Optional[float] = None
@@ -293,6 +296,7 @@ async def lifespan(app: FastAPI):
     await db.comp_off_grants.create_index("source_id", unique=True, sparse=True)
 
     await _seed_initial_users(db)
+    await _cleanup_placeholder_staff(db)
     await _cleanup_admin_sunday_schedules(db)
     logger.info("Warehouse API ready")
     try:
@@ -302,7 +306,7 @@ async def lifespan(app: FastAPI):
 
 
 async def _seed_initial_users(db) -> None:
-    """Seed manager/asst/dc + 11 staff (incl. Midhun/Ajay/Farhan) if missing."""
+    """Seed manager/asst/dc only if missing."""
     seeds = [
         # admins
         {
@@ -336,36 +340,6 @@ async def _seed_initial_users(db) -> None:
             "status": "active",
         },
     ]
-    # Team A staff (5)
-    team_a = [
-        ("MIDHUN", "midhun@warehouse.com", "ega"),
-        ("AJAY", "ajay@warehouse.com", "ega"),
-        ("FARHAN", "farhan@warehouse.com", "morning"),
-        ("Staff A1", "staff_a1@warehouse.com", "morning"),
-        ("Staff A2", "staff_a2@warehouse.com", "afternoon"),
-    ]
-    # Team B staff (4)
-    team_b = [
-        ("Staff B1", "staff_b1@warehouse.com", "morning"),
-        ("Staff B2", "staff_b2@warehouse.com", "afternoon"),
-        ("Staff B3", "staff_b3@warehouse.com", "night"),
-        ("Staff B4", "staff_b4@warehouse.com", "night"),
-    ]
-    for name, email, shift in team_a:
-        seeds.append({
-            "email": email, "password": "Staff@123", "full_name": name,
-            "role": "employee", "team": "A",
-            "location": "ega" if shift == "ega" else "warehouse",
-            "default_shift": shift, "status": "active",
-        })
-    for name, email, shift in team_b:
-        seeds.append({
-            "email": email, "password": "Staff@123", "full_name": name,
-            "role": "employee", "team": "B",
-            "location": "warehouse",
-            "default_shift": shift, "status": "active",
-        })
-
     for s in seeds:
         existing = await db.users.find_one({"email": s["email"]})
         if existing:
@@ -380,6 +354,7 @@ async def _seed_initial_users(db) -> None:
             "team": s.get("team"),
             "location": s.get("location", "warehouse"),
             "default_shift": s.get("default_shift"),
+            "avatar_url": s.get("avatar_url"),
             "annual_leave_balance": 30,
             "sick_leave_balance": 12,
             "comp_off_balance": 0,
@@ -390,6 +365,36 @@ async def _seed_initial_users(db) -> None:
             logger.info("Seeded user: %s (%s)", s["email"], s["role"])
         except DuplicateKeyError:
             pass
+
+
+async def _cleanup_placeholder_staff(db) -> None:
+    """Remove old demo staff that were previously auto-seeded and should not return."""
+    placeholder_query = {
+        "role": "employee",
+        "$or": [
+            {"email": {"$in": [
+                "staff_a1@warehouse.com",
+                "staff_a2@warehouse.com",
+                "staff_b1@warehouse.com",
+                "staff_b2@warehouse.com",
+                "staff_b3@warehouse.com",
+                "staff_b4@warehouse.com",
+                "testing@warehouse.com",
+                "test@warehouse.com",
+            ]}},
+            {"full_name": {"$regex": r"^(Staff [AB]\d|Testing|Test User)$", "$options": "i"}},
+        ],
+    }
+    docs = await db.users.find(placeholder_query).to_list(100)
+    for doc in docs:
+        uid = doc["_id"]
+        await db.users.delete_one({"_id": uid})
+        await db.schedules.delete_many({"user_id": uid})
+        await db.attendance.delete_many({"user_id": uid})
+        await db.leaves.delete_many({"user_id": uid})
+        await db.comp_off_grants.delete_many({"user_id": uid})
+    if docs:
+        logger.info("Removed %s placeholder/demo staff records", len(docs))
 
 
 async def _cleanup_admin_sunday_schedules(db) -> None:
@@ -462,6 +467,7 @@ def _user_public(doc: dict) -> UserPublic:
         team=doc.get("team"),
         location=doc.get("location", "warehouse"),
         default_shift=doc.get("default_shift"),
+        avatar_url=doc.get("avatar_url"),
         annual_leave_balance=doc.get("annual_leave_balance", 30),
         sick_leave_balance=doc.get("sick_leave_balance", 12),
         comp_off_balance=doc.get("comp_off_balance", 0),
@@ -508,6 +514,7 @@ async def register(payload: UserCreate, db=Depends(get_db)):
         "team": payload.team,
         "location": payload.location,
         "default_shift": None,
+        "avatar_url": payload.avatar_url,
         "annual_leave_balance": 30,
         "sick_leave_balance": 12,
         "comp_off_balance": 0,
@@ -714,6 +721,7 @@ async def create_user(payload: UserCreate, admin: dict = Depends(require_admin),
         "team": payload.team,
         "location": payload.location,
         "default_shift": "admin" if payload.role in ADMIN_ROLES else None,
+        "avatar_url": payload.avatar_url,
         "annual_leave_balance": 30,
         "sick_leave_balance": 12,
         "comp_off_balance": 0,
@@ -804,6 +812,29 @@ async def _revoke_sunday_comp_off(db, user_id: str, shift_date: str) -> bool:
         await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": -1}})
         return True
     return False
+
+
+async def _record_comp_off_usage(db, leave: dict, days: float, admin_name: str) -> None:
+    if days <= 0:
+        return
+    source_id = f"leave-comp-off:{leave['id']}"
+    existing = await db.comp_off_grants.find_one({"source_id": source_id})
+    if existing:
+        return
+    usage = CompOffGrant(
+        user_id=leave["user_id"],
+        user_name=leave["user_name"],
+        earned_date=leave["start_date"],
+        overtime_hours=0,
+        days=-round(days, 2),
+        reason=f"Comp off used for approved {leave['leave_type']} leave ({leave['start_date']} to {leave['end_date']})",
+        granted_by=admin_name,
+        source_id=source_id,
+    )
+    try:
+        await db.comp_off_grants.insert_one(usage.dict())
+    except DuplicateKeyError:
+        return
 
 
 async def _apply_approved_leave_to_schedule(db, leave: dict) -> None:
@@ -1356,6 +1387,8 @@ async def act_on_leave(
         f = field_map.get(leave["leave_type"])
         if f:
             await db.users.update_one({"_id": leave["user_id"]}, {"$inc": {f: -leave["days"]}})
+            if leave["leave_type"] == "comp_off":
+                await _record_comp_off_usage(db, leave, leave["days"], admin["full_name"])
         elif leave["leave_type"] == "emergency":
             leave_user = await db.users.find_one({"_id": leave["user_id"]}, {"comp_off_balance": 1})
             comp_off_available = max(0, int((leave_user or {}).get("comp_off_balance", 0)))
@@ -1365,6 +1398,7 @@ async def act_on_leave(
                     {"_id": leave["user_id"]},
                     {"$inc": {"comp_off_balance": -comp_off_deduction}},
                 )
+                await _record_comp_off_usage(db, leave, comp_off_deduction, admin["full_name"])
         await _apply_approved_leave_to_schedule(db, leave)
 
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})

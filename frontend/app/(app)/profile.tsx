@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,9 +35,13 @@ export default function Profile() {
         <Text style={styles.title}>My Account</Text>
 
         <View style={styles.profileCard}>
-          <View style={styles.avatarLg}>
-            <Text style={styles.avatarLgText}>{user.full_name.slice(0, 2).toUpperCase()}</Text>
-          </View>
+          {user.avatar_url ? (
+            <Image source={{ uri: user.avatar_url }} style={styles.avatarLg} />
+          ) : (
+            <View style={styles.avatarLg}>
+              <Text style={styles.avatarLgText}>{user.full_name.slice(0, 2).toUpperCase()}</Text>
+            </View>
+          )}
           <Text style={styles.userName}>{user.full_name}</Text>
           <Text style={styles.userEmail}>{user.email}</Text>
           <View style={styles.roleBadge}>
