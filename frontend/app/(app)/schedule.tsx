@@ -126,6 +126,20 @@ export default function Schedule() {
     return c;
   }, [dayEntries]);
 
+  const coverageByDate = useMemo(() => {
+    const map = new Map<string, { working: number; leave: number; off: number; total: number }>();
+    weekDays.forEach(d => map.set(fmtDate(d), { working: 0, leave: 0, off: 0, total: 0 }));
+    entries.forEach(e => {
+      const item = map.get(e.shift_date);
+      if (!item) return;
+      item.total += 1;
+      if (e.shift_type === "leave") item.leave += 1;
+      else if (e.shift_type === "off") item.off += 1;
+      else item.working += 1;
+    });
+    return map;
+  }, [entries, weekDays]);
+
   const entriesByUserDate = useMemo(() => {
     const map = new Map<string, any>();
     entries.forEach(e => map.set(`${e.user_id}|${e.shift_date}`, e));
@@ -181,6 +195,16 @@ export default function Schedule() {
     );
   };
 
+  const selectUsersByScheduledShift = (shift: string) => {
+    const dates = selectedDates.length ? selectedDates : [selectedDate];
+    const ids = new Set(
+      entries
+        .filter(e => dates.includes(e.shift_date) && e.shift_type === shift)
+        .map(e => e.user_id),
+    );
+    setSelectedUsers(sheetUsers.filter((u: any) => ids.has(u.id)).map((u: any) => u.id));
+  };
+
   const selectBulkDates = (mode: "all" | "weekdays" | "today" | "clear") => {
     if (mode === "clear") {
       setSelectedDates([]);
@@ -199,11 +223,7 @@ export default function Schedule() {
 
   const openBulkAssign = () => {
     setSelectedUsers([]);
-    setSelectedDates(
-      weekDays
-        .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
-        .map(fmtDate),
-    );
+    setSelectedDates([selectedDate]);
     setBulkShift("morning");
     setBulkOpen(true);
   };
@@ -358,6 +378,32 @@ export default function Schedule() {
           <Ionicons name="chevron-forward" size={20} color={appTheme.primary} />
         </TouchableOpacity>
       </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.coverageStrip}>
+        {weekDays.map((d, i) => {
+          const dateKey = fmtDate(d);
+          const info = coverageByDate.get(dateKey) || { working: 0, leave: 0, off: 0, total: 0 };
+          const active = selectedDay === i;
+          return (
+            <TouchableOpacity
+              key={dateKey}
+              testID={`coverage-date-${dateKey}`}
+              style={[styles.coverageDayCard, active && styles.coverageDayCardActive]}
+              onPress={() => {
+                setSelectedDay(i);
+                setSelectedDates([dateKey]);
+              }}
+            >
+              <Text style={[styles.coverageDow, active && { color: "#fff" }]}>{DAY_LABELS[i % 7]}</Text>
+              <Text style={[styles.coverageNum, active && { color: "#fff" }]}>{d.getDate()}</Text>
+              <View style={styles.coverageCounts}>
+                <Text style={[styles.coverageCountText, active && { color: "#fff" }]}>Work {info.working}</Text>
+                <Text style={[styles.coverageCountText, { color: appTheme.green }, active && { color: "#fff" }]}>Leave {info.leave}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {/* Day entries */}
       <FlatList
@@ -521,20 +567,29 @@ export default function Schedule() {
               </View>
 
               <Text style={styles.bulkLabel}>SELECT EMPLOYEES *</Text>
+              <View style={styles.bulkHelperBox}>
+                <Text style={styles.bulkHelperTitle}>Staff selection</Text>
+                <Text style={styles.bulkHelperText}>Tap one employee, several employees, or use a shortcut. Current Day/Night uses the schedule already shown for your selected date(s).</Text>
+              </View>
               <View style={styles.quickSelectRow}>
                 {[
-                  { key: "morning", label: "Day Staff" },
+                  { key: "current_morning", label: "Current Day" },
+                  { key: "current_night", label: "Current Night" },
+                  { key: "morning", label: "Default Day" },
+                  { key: "night", label: "Default Night" },
                   { key: "admin", label: "Admin" },
-                  { key: "afternoon", label: "Afternoon" },
-                  { key: "night", label: "Night" },
-                  { key: "all", label: "All" },
+                  { key: "all", label: "All Staff" },
                   { key: "clear", label: "Clear" },
                 ].map(option => (
                   <TouchableOpacity
                     key={option.key}
                     testID={`bulk-select-${option.key}`}
                     style={styles.quickSelectBtn}
-                    onPress={() => selectUsersByDefaultShift(option.key)}
+                    onPress={() => {
+                      if (option.key === "current_morning") selectUsersByScheduledShift("morning");
+                      else if (option.key === "current_night") selectUsersByScheduledShift("night");
+                      else selectUsersByDefaultShift(option.key);
+                    }}
                   >
                     <Text style={styles.quickSelectText}>{option.label}</Text>
                   </TouchableOpacity>
@@ -544,7 +599,11 @@ export default function Schedule() {
                 {sheetUsers.map((u: any) => {
                   const checked = selectedUsers.includes(u.id);
                   return (
-                    <TouchableOpacity key={u.id} style={styles.employeePickRow} onPress={() => toggleBulkUser(u.id)}>
+                    <TouchableOpacity
+                      key={u.id}
+                      style={[styles.employeePickRow, checked && styles.employeePickRowActive]}
+                      onPress={() => toggleBulkUser(u.id)}
+                    >
                       <Ionicons name={checked ? "checkbox" : "square-outline"} size={22} color={checked ? appTheme.primary : appTheme.muted} />
                       {u.avatar_url ? (
                         <Image source={{ uri: u.avatar_url }} style={styles.bulkAvatar} />
@@ -553,7 +612,9 @@ export default function Schedule() {
                       )}
                       <View>
                         <Text style={styles.employeePickName}>{u.full_name}</Text>
-                        <Text style={styles.employeePickMeta}>{u.team ? `Team ${u.team}` : "Management"}</Text>
+                        <Text style={styles.employeePickMeta}>
+                          {u.team ? `Team ${u.team}` : "Management"} · {shiftLabel[u.default_shift || ""] || "No default shift"}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -561,6 +622,10 @@ export default function Schedule() {
               </ScrollView>
 
               <Text style={styles.bulkLabel}>SELECT DAYS *</Text>
+              <View style={styles.bulkHelperBox}>
+                <Text style={styles.bulkHelperTitle}>Date selection</Text>
+                <Text style={styles.bulkHelperText}>Pick one day for single-duty coverage, or select multiple dates for repeated assignment.</Text>
+              </View>
               <View style={styles.quickSelectRow}>
                 {[
                   { key: "today", label: "Selected Day" },
@@ -604,6 +669,10 @@ export default function Schedule() {
               </View>
 
               <Text style={styles.bulkLabel}>SELECT SHIFT *</Text>
+              <View style={styles.bulkHelperBox}>
+                <Text style={styles.bulkHelperTitle}>Shift to apply</Text>
+                <Text style={styles.bulkHelperText}>This overwrites the selected employee/date schedule cells only.</Text>
+              </View>
               <View style={styles.shiftPickGrid}>
                 {ASSIGN_SHIFTS.map(s => {
                   const selected = bulkShift === s.key;
@@ -765,12 +834,22 @@ const styles = StyleSheet.create({
   staffFilterAvatarText: { color: appTheme.primary, fontSize: 11, fontWeight: "900" },
   staffFilterText: { color: appTheme.text, fontSize: 12, fontWeight: "900", maxWidth: 126 },
   rosterRange: {
-    marginHorizontal: 20, marginBottom: 26, padding: 18, borderRadius: 18,
+    marginHorizontal: 20, marginBottom: 12, padding: 18, borderRadius: 18,
     backgroundColor: appTheme.surface, borderColor: appTheme.border, borderWidth: 1,
     flexDirection: "row", alignItems: "center", gap: 14,
   },
   rosterRangeTitle: { color: appTheme.text, fontSize: 19, fontWeight: "900", textAlign: "center" },
   rosterRangeSub: { color: appTheme.muted, fontSize: 13, marginTop: 4 },
+  coverageStrip: { gap: 10, paddingHorizontal: 20, paddingBottom: 18 },
+  coverageDayCard: {
+    width: 104, minHeight: 104, borderRadius: 18, backgroundColor: appTheme.surface,
+    borderColor: appTheme.border, borderWidth: 1, padding: 12, justifyContent: "space-between",
+  },
+  coverageDayCardActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
+  coverageDow: { color: appTheme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  coverageNum: { color: appTheme.text, fontSize: 24, fontWeight: "900" },
+  coverageCounts: { gap: 2 },
+  coverageCountText: { color: appTheme.text, fontSize: 10, fontWeight: "900" },
   dayTitle: { color: appTheme.text, fontSize: 18, fontWeight: "900", marginBottom: 10 },
   sheetScroll: {
     marginBottom: 18, borderColor: appTheme.border, borderWidth: 1, borderRadius: 22,
@@ -846,6 +925,12 @@ const styles = StyleSheet.create({
   bulkSub: { color: appTheme.muted, fontSize: 14, marginTop: 4 },
   closeBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center" },
   bulkLabel: { color: "#6F7484", fontSize: 12, fontWeight: "900", letterSpacing: 0.8, marginHorizontal: 28, marginTop: 22, marginBottom: 10 },
+  bulkHelperBox: {
+    marginHorizontal: 28, marginBottom: 10, padding: 12, borderRadius: 14,
+    backgroundColor: appTheme.surfaceSoft, borderColor: appTheme.border, borderWidth: 1,
+  },
+  bulkHelperTitle: { color: appTheme.text, fontSize: 12, fontWeight: "900" },
+  bulkHelperText: { color: appTheme.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
   employeePicker: { marginHorizontal: 28, maxHeight: 190, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14 },
   quickSelectRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 28, marginBottom: 10 },
   quickSelectBtn: {
@@ -854,6 +939,7 @@ const styles = StyleSheet.create({
   },
   quickSelectText: { color: appTheme.text, fontSize: 11, fontWeight: "900" },
   employeePickRow: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderBottomColor: appTheme.border, borderBottomWidth: 1 },
+  employeePickRowActive: { backgroundColor: appTheme.purpleSoft },
   bulkAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
   bulkAvatarText: { color: "#fff", fontWeight: "900" },
   employeePickName: { color: appTheme.text, fontSize: 15, fontWeight: "800" },
