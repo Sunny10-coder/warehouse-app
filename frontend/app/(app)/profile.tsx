@@ -4,9 +4,11 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth";
 import { colors, roleLabel, shiftLabel } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const { theme } = useThemeMode();
 
   const onLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -29,12 +31,12 @@ export default function Profile() {
   if (!user) return null;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
-        <Text style={styles.overline}>PROFILE</Text>
-        <Text style={styles.title}>My Account</Text>
+        <Text style={[styles.overline, { color: theme.muted }]}>PROFILE</Text>
+        <Text style={[styles.title, { color: theme.text }]}>My Account</Text>
 
-        <View style={styles.profileCard}>
+        <View style={[styles.profileCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {user.avatar_url ? (
             <Image source={{ uri: user.avatar_url }} style={styles.avatarLg} />
           ) : (
@@ -42,20 +44,20 @@ export default function Profile() {
               <Text style={styles.avatarLgText}>{user.full_name.slice(0, 2).toUpperCase()}</Text>
             </View>
           )}
-          <Text style={styles.userName}>{user.full_name}</Text>
-          <Text style={styles.userEmail}>{user.email}</Text>
+          <Text style={[styles.userName, { color: theme.text }]}>{user.full_name}</Text>
+          <Text style={[styles.userEmail, { color: theme.muted }]}>{user.email}</Text>
           <View style={styles.roleBadge}>
             <Ionicons name="shield-checkmark" size={12} color={colors.morning} />
             <Text style={styles.roleText}>{roleLabel[user.role]}</Text>
           </View>
         </View>
 
-        <Text style={styles.overline}>DETAILS</Text>
+        <Text style={[styles.overline, { color: theme.muted }]}>DETAILS</Text>
         <DetailRow icon="people" label="Team" value={user.team ? `TEAM ${user.team}` : "—"} />
         <DetailRow icon="location" label="Location" value={user.location.toUpperCase()} />
         <DetailRow icon="time" label="Default Shift" value={shiftLabel[user.default_shift || ""] || "Not set"} />
 
-        <Text style={styles.overline}>LEAVE BALANCES</Text>
+        <Text style={[styles.overline, { color: theme.muted }]}>LEAVE BALANCES</Text>
         <DetailRow icon="airplane" label="Annual Vacation" value={`${user.annual_leave_balance} days`} valueColor={colors.annual} />
         <DetailRow icon="medkit" label="Sick Leave" value={`${user.sick_leave_balance} days`} valueColor={colors.sick} />
         <DetailRow icon="swap-horizontal" label="Comp Off" value={`${user.comp_off_balance} days`} valueColor={colors.compOff} />

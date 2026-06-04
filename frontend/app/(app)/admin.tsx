@@ -10,6 +10,7 @@ import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveLabel, leaveColor, roleLabel, shiftLabel } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 const SHIFT_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "off"];
 
@@ -34,6 +35,7 @@ function mondayString(d = new Date()) {
 
 export default function Admin() {
   const { user: currentUser } = useAuth();
+  const { theme } = useThemeMode();
   const [tab, setTab] = useState<Tab>("leaves");
   const [users, setUsers] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
@@ -186,10 +188,10 @@ export default function Admin() {
   const sundayTeamB = users.filter(u => u.status === "active" && u.role === "employee" && u.team === "B" && u.location !== "ega");
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.overline}>ADMIN CONSOLE</Text>
-        <Text style={styles.title}>Manage Operations</Text>
+        <Text style={[styles.overline, { color: theme.muted }]}>ADMIN CONSOLE</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Manage Operations</Text>
       </View>
 
       <View style={styles.tabRow}>
@@ -207,7 +209,7 @@ export default function Admin() {
             {leaves.length === 0 ? (
               <Empty icon="checkmark-done" text="No pending leave requests" />
             ) : leaves.map(l => (
-              <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type) }]} testID={`pending-leave-${l.id}`}>
+              <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border }]} testID={`pending-leave-${l.id}`}>
                 <View style={styles.cardTop}>
                   <View>
                     <Text style={styles.userName}>{l.user_name}</Text>
@@ -247,7 +249,7 @@ export default function Admin() {
               <>
                 <Text style={styles.sectionTitle}>Pending Approval ({pendingUsers.length})</Text>
                 {pendingUsers.map(u => (
-                  <View key={u.id} style={[styles.card, { borderLeftColor: colors.warning }]}>
+                  <View key={u.id} style={[styles.card, { borderLeftColor: colors.warning, backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <View style={styles.cardTop}>
                       <View>
                         <Text style={styles.userName}>{u.full_name}</Text>
@@ -282,7 +284,7 @@ export default function Admin() {
               <TouchableOpacity
                 key={u.id}
                 testID={`user-row-${u.id}`}
-                style={styles.userRow}
+                style={[styles.userRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
                 onPress={() => setEditUser(u)}
               >
                 {u.avatar_url ? (
@@ -325,7 +327,7 @@ export default function Admin() {
 
         {tab === "schedule" && (
           <>
-            <View style={[styles.card, { borderLeftColor: colors.danger }]}>
+            <View style={[styles.card, { borderLeftColor: colors.danger, backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={styles.sectionTitle}>Fresh Start</Text>
               <Text style={styles.helper}>
                 Clears schedules, attendance, and leave requests. Staff logins remain active.
@@ -340,7 +342,7 @@ export default function Admin() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <View style={styles.scheduleHeaderRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionTitle}>Generate Schedule</Text>

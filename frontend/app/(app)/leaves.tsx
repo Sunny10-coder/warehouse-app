@@ -10,6 +10,7 @@ import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveLabel, leaveColor } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
   { key: "annual", label: "Annual Vacation", icon: "airplane" },
@@ -20,6 +21,7 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
 
 export default function Leaves() {
   const { user, refresh } = useAuth();
+  const { theme } = useThemeMode();
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -71,7 +73,7 @@ export default function Leaves() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.overline}>LEAVES</Text>
@@ -101,7 +103,7 @@ export default function Leaves() {
             <Text style={styles.emptySub}>Tap APPLY to submit a new request</Text>
           </View>
         ) : leaves.map((l, i) => (
-          <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type) }]} testID={`leave-item-${i}`}>
+          <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border }]} testID={`leave-item-${i}`}>
             <View style={styles.cardTop}>
               <View>
                 <Text style={[styles.leaveType, { color: leaveColor(l.leave_type) }]}>

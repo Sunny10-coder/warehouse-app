@@ -14,6 +14,10 @@ import { useThemeMode } from "@/src/theme-context";
 
 type DashboardData = {
   today_schedule: any;
+  today_signed_in: number;
+  today_sick: number;
+  today_comp_off: number;
+  today_on_leave: number;
   hours_this_month: number;
   present_days_this_month: number;
   pending_leaves: number;
@@ -25,6 +29,10 @@ type DashboardData = {
     pending_leave_approvals: number;
     total_active_users: number;
     today_coverage: Record<string, number>;
+    today_signed_in: number;
+    today_sick: number;
+    today_comp_off: number;
+    today_on_leave: number;
   };
 };
 
@@ -54,7 +62,10 @@ export default function Dashboard() {
 
   const today = data?.today_schedule;
   const totalEmployees = data?.admin?.total_active_users ?? 1;
-  const presentToday = data?.present_days_this_month ?? 0;
+  const presentToday = data?.admin?.today_signed_in ?? data?.today_signed_in ?? 0;
+  const sickToday = data?.admin?.today_sick ?? data?.today_sick ?? 0;
+  const compOffToday = data?.admin?.today_comp_off ?? data?.today_comp_off ?? 0;
+  const onLeaveToday = data?.admin?.today_on_leave ?? data?.today_on_leave ?? 0;
   const pendingLeaves = data?.pending_leaves ?? 0;
   const attendanceRate = totalEmployees > 0 ? Math.min(100, Math.round((presentToday / totalEmployees) * 100)) : 0;
 
@@ -109,15 +120,16 @@ export default function Dashboard() {
             <View>
               <Text style={styles.rateLabel}>ATTENDANCE RATE</Text>
               <Text style={styles.rateValue}>{presentToday}/{totalEmployees}</Text>
-              <Text style={styles.rateSub}>Employees checked in today</Text>
+              <Text style={styles.rateSub}>Employees signed in today</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.metricGrid}>
           <MetricCard icon="people" color={appTheme.primary} value={totalEmployees} label="Total Employees" sub={`${totalEmployees} registered`} />
-          <MetricCard icon="trending-up" color={appTheme.green} value={presentToday} label="Present Today" sub={`${attendanceRate}% attendance rate`} />
-          <MetricCard icon="briefcase" color={appTheme.yellow} value={pendingLeaves} label="On Leave" sub={`${pendingLeaves} pending requests`} />
+          <MetricCard icon="trending-up" color={appTheme.green} value={presentToday} label="Signed In Today" sub={`${attendanceRate}% live attendance`} />
+          <MetricCard icon="medkit" color={appTheme.red} value={sickToday} label="Sick Today" sub="Approved sick leave" />
+          <MetricCard icon="swap-horizontal" color={appTheme.blue} value={compOffToday} label="Comp Off Today" sub="Approved comp off" />
           <MetricCard icon="trending-down" color={appTheme.red} value="0" label="Absent Today" sub="Requires follow-up" />
         </View>
 
@@ -155,9 +167,9 @@ export default function Dashboard() {
             </View>
             <View style={styles.monthGrid}>
               <MiniStat value={presentToday} label="Present" color={appTheme.green} bg={appTheme.greenSoft} />
-              <MiniStat value="0" label="Late Arrivals" color={appTheme.yellow} bg={appTheme.yellowSoft} />
-              <MiniStat value="0" label="Absent" color={appTheme.red} bg={appTheme.redSoft} />
-              <MiniStat value={pendingLeaves} label="Pending Leave" color={appTheme.primary} bg={appTheme.purpleSoft} />
+              <MiniStat value={sickToday} label="Sick Today" color={appTheme.red} bg={appTheme.redSoft} />
+              <MiniStat value={compOffToday} label="Comp Off" color={appTheme.blue} bg={appTheme.blueSoft} />
+              <MiniStat value={onLeaveToday} label="On Leave" color={appTheme.primary} bg={appTheme.purpleSoft} />
             </View>
             <Text style={styles.progressLabel}>Attendance Rate <Text style={{ color: appTheme.primary }}>{attendanceRate}%</Text></Text>
             <View style={styles.progressTrack}>

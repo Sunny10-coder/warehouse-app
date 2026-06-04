@@ -10,6 +10,7 @@ import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor, leaveLabel, leaveColor } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 const LEAVE_TYPES = [
   { key: "annual", icon: "airplane" },
@@ -37,6 +38,7 @@ function validTime(value: string) {
 
 export default function Attendance() {
   const { user } = useAuth();
+  const { theme } = useThemeMode();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [todaySched, setTodaySched] = useState<any>(null);
@@ -207,7 +209,7 @@ export default function Attendance() {
   const sc = shiftColor(todaySched?.shift_type);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <ScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
@@ -216,7 +218,7 @@ export default function Attendance() {
         <Text style={styles.title}>Today · {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</Text>
 
         {/* Today card */}
-        <View style={[styles.todayCard, { borderLeftColor: sc.c }]}>
+        <View style={[styles.todayCard, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border }]}>
           {todaySched ? (
             <>
               <Text style={[styles.scheduledLabel, { color: sc.c }]}>
@@ -344,7 +346,7 @@ export default function Attendance() {
               r.status === "late" ? colors.warning :
               r.status === "absent" ? colors.danger : colors.textSecondary;
             return (
-              <View key={i} style={styles.historyRow} testID={`attendance-record-${i}`}>
+              <View key={i} style={[styles.historyRow, { backgroundColor: theme.surface, borderColor: theme.border }]} testID={`attendance-record-${i}`}>
                 <View style={[styles.dateBlock, { borderColor: c.c }]}>
                   <Text style={styles.dateDay}>{new Date(r.attendance_date).getDate()}</Text>
                   <Text style={styles.dateMonth}>

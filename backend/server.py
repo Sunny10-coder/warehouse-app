@@ -1439,6 +1439,25 @@ async def act_on_leave(
 async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
     today = date.today().isoformat()
     today_schedule = await db.schedules.find_one({"user_id": user["_id"], "shift_date": today}, {"_id": 0})
+    today_attendance_docs = await db.attendance.find(
+        {
+            "attendance_date": today,
+            "status": {"$in": ["present", "late", "half_day"]},
+        },
+        {"_id": 0, "user_id": 1},
+    ).to_list(1000)
+    today_signed_in = len({a["user_id"] for a in today_attendance_docs})
+    today_leave_docs = await db.leaves.find(
+        {
+            "status": "approved",
+            "start_date": {"$lte": today},
+            "end_date": {"$gte": today},
+        },
+        {"_id": 0, "user_id": 1, "leave_type": 1},
+    ).to_list(1000)
+    today_sick = len({lv["user_id"] for lv in today_leave_docs if lv.get("leave_type") == "sick"})
+    today_comp_off = len({lv["user_id"] for lv in today_leave_docs if lv.get("leave_type") == "comp_off"})
+    today_on_leave = len({lv["user_id"] for lv in today_leave_docs})
     # this month attendance summary
     start_month = date.today().replace(day=1).isoformat()
     att_docs = await db.attendance.find(
@@ -1451,6 +1470,10 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
 
     summary = {
         "today_schedule": today_schedule,
+        "today_signed_in": today_signed_in,
+        "today_sick": today_sick,
+        "today_comp_off": today_comp_off,
+        "today_on_leave": today_on_leave,
         "hours_this_month": round(hours_this_month, 2),
         "present_days_this_month": present_days,
         "pending_leaves": pending_leaves,
@@ -1474,6 +1497,10 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
             "pending_leave_approvals": pending_all_leaves,
             "total_active_users": total_active,
             "today_coverage": counts,
+            "today_signed_in": today_signed_in,
+            "today_sick": today_sick,
+            "today_comp_off": today_comp_off,
+            "today_on_leave": today_on_leave,
         }
     return summary
 

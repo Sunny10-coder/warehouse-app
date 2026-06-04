@@ -57,8 +57,10 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
   const [viewMode, setViewMode] = useState<"mine" | "team">("team");
+  const [selectedStaffId, setSelectedStaffId] = useState("all");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [bulkShift, setBulkShift] = useState("morning");
   const [savingBulk, setSavingBulk] = useState(false);
 
@@ -82,6 +84,10 @@ export default function Schedule() {
       setViewMode("team");
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    setSelectedStaffId("all");
+  }, [viewMode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,7 +114,7 @@ export default function Schedule() {
 
   const selectedDate = fmtDate(weekDays[selectedDay]);
   const dayEntries = entries
-    .filter(e => e.shift_date === selectedDate)
+    .filter(e => e.shift_date === selectedDate && (selectedStaffId === "all" || e.user_id === selectedStaffId))
     .sort((a, b) => {
       const rank = (s: string) => s === "off" ? 3 : s === "leave" ? 2 : 1;
       return rank(a.shift_type) - rank(b.shift_type) || a.user_name.localeCompare(b.user_name);
@@ -146,13 +152,66 @@ export default function Schedule() {
       });
   }, [entries, users, viewMode, user, isAdmin]);
 
+  const visibleSheetUsers = useMemo(() => {
+    if (selectedStaffId === "all") return sheetUsers;
+    return sheetUsers.filter((u: any) => u.id === selectedStaffId);
+  }, [sheetUsers, selectedStaffId]);
+
   const toggleBulkUser = (id: string) => {
     setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  const toggleBulkDate = (dateKey: string) => {
+    setSelectedDates(prev => prev.includes(dateKey) ? prev.filter(x => x !== dateKey) : [...prev, dateKey]);
+  };
+
+  const selectUsersByDefaultShift = (shift: string) => {
+    if (shift === "all") {
+      setSelectedUsers(sheetUsers.map((u: any) => u.id));
+      return;
+    }
+    if (shift === "clear") {
+      setSelectedUsers([]);
+      return;
+    }
+    setSelectedUsers(
+      sheetUsers
+        .filter((u: any) => (u.default_shift || "") === shift)
+        .map((u: any) => u.id),
+    );
+  };
+
+  const selectBulkDates = (mode: "all" | "weekdays" | "today" | "clear") => {
+    if (mode === "clear") {
+      setSelectedDates([]);
+      return;
+    }
+    if (mode === "today") {
+      setSelectedDates([selectedDate]);
+      return;
+    }
+    setSelectedDates(
+      weekDays
+        .filter(d => mode === "all" || (d.getDay() !== 0 && d.getDay() !== 6))
+        .map(fmtDate),
+    );
+  };
+
   const openBulkAssign = () => {
     setSelectedUsers([]);
+    setSelectedDates(
+      weekDays
+        .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
+        .map(fmtDate),
+    );
     setBulkShift("morning");
+    setBulkOpen(true);
+  };
+
+  const openSingleAssign = (userId: string, dateKey: string, shiftType?: string | null) => {
+    setSelectedUsers([userId]);
+    setSelectedDates([dateKey]);
+    setBulkShift(shiftType && shiftType !== "leave" ? shiftType : "morning");
     setBulkOpen(true);
   };
 
@@ -161,14 +220,15 @@ export default function Schedule() {
       Alert.alert("Select employees", "Choose at least one employee.");
       return;
     }
+    if (!selectedDates.length) {
+      Alert.alert("Select days", "Choose at least one date to update.");
+      return;
+    }
     setSavingBulk(true);
     try {
       const chosenShift = ASSIGN_SHIFTS.find(s => s.key === bulkShift);
-      const dates = weekDays
-        .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
-        .map(fmtDate);
       await Promise.all(selectedUsers.flatMap(userId =>
-        dates.map(shift_date => api.post("/schedules", {
+        selectedDates.map(shift_date => api.post("/schedules", {
           user_id: userId,
           shift_date,
           shift_type: chosenShift?.saveAs || bulkShift,
@@ -232,6 +292,42 @@ export default function Schedule() {
         )}
       </View>
 
+      {viewMode === "team" && (
+        <View style={styles.staffFilterBlock}>
+          <Text style={styles.staffFilterLabel}>EMPLOYEE SCHEDULE</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.staffFilterScroll}>
+            <TouchableOpacity
+              testID="schedule-staff-all"
+              style={[styles.staffFilterChip, selectedStaffId === "all" && styles.staffFilterChipActive]}
+              onPress={() => setSelectedStaffId("all")}
+            >
+              <Ionicons name="people" size={14} color={selectedStaffId === "all" ? "#fff" : appTheme.primary} />
+              <Text style={[styles.staffFilterText, selectedStaffId === "all" && { color: "#fff" }]}>All Staff</Text>
+            </TouchableOpacity>
+            {sheetUsers.map((u: any) => {
+              const active = selectedStaffId === u.id;
+              return (
+                <TouchableOpacity
+                  key={u.id}
+                  testID={`schedule-staff-${u.id}`}
+                  style={[styles.staffFilterChip, active && styles.staffFilterChipActive]}
+                  onPress={() => setSelectedStaffId(u.id)}
+                >
+                  {u.avatar_url ? (
+                    <Image source={{ uri: u.avatar_url }} style={styles.staffFilterAvatar} />
+                  ) : (
+                    <View style={styles.staffFilterAvatar}>
+                      <Text style={styles.staffFilterAvatarText}>{String(u.full_name || "?").slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <Text style={[styles.staffFilterText, active && { color: "#fff" }]} numberOfLines={1}>{u.full_name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       <View style={styles.rosterRange}>
         <TouchableOpacity
           testID="schedule-prev-week"
@@ -293,7 +389,7 @@ export default function Schedule() {
                     );
                   })}
                 </View>
-                {sheetUsers.map((u: any) => (
+                {visibleSheetUsers.map((u: any) => (
                   <View key={u.id} style={styles.sheetRow}>
                     <View style={styles.sheetNameCell}>
                       {u.avatar_url ? (
@@ -324,7 +420,7 @@ export default function Schedule() {
                           ]}
                           onPress={() => {
                             setSelectedDay(i);
-                            if (isAdmin) router.push({ pathname: "/schedule-edit", params: { date: dateKey } });
+                            if (isAdmin) openSingleAssign(u.id, dateKey, entry?.shift_type);
                           }}
                         >
                           <Text style={[styles.sheetShiftText, { color: entry ? colorForShift(entry.shift_type) : appTheme.muted }]}>
@@ -416,8 +512,8 @@ export default function Schedule() {
             <View style={styles.bulkModal}>
               <View style={styles.bulkHeader}>
                 <View>
-                  <Text style={styles.bulkTitle}>Bulk Assign Shifts</Text>
-                  <Text style={styles.bulkSub}>Assign weekdays only for {rangeWeeks} weeks</Text>
+                  <Text style={styles.bulkTitle}>Assign Schedule</Text>
+                  <Text style={styles.bulkSub}>{selectedUsers.length} employee(s) · {selectedDates.length} day(s)</Text>
                 </View>
                 <TouchableOpacity style={styles.closeBtn} onPress={() => setBulkOpen(false)}>
                   <Ionicons name="close" size={20} color={appTheme.muted} />
@@ -425,6 +521,25 @@ export default function Schedule() {
               </View>
 
               <Text style={styles.bulkLabel}>SELECT EMPLOYEES *</Text>
+              <View style={styles.quickSelectRow}>
+                {[
+                  { key: "morning", label: "Day Staff" },
+                  { key: "admin", label: "Admin" },
+                  { key: "afternoon", label: "Afternoon" },
+                  { key: "night", label: "Night" },
+                  { key: "all", label: "All" },
+                  { key: "clear", label: "Clear" },
+                ].map(option => (
+                  <TouchableOpacity
+                    key={option.key}
+                    testID={`bulk-select-${option.key}`}
+                    style={styles.quickSelectBtn}
+                    onPress={() => selectUsersByDefaultShift(option.key)}
+                  >
+                    <Text style={styles.quickSelectText}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <ScrollView style={styles.employeePicker}>
                 {sheetUsers.map((u: any) => {
                   const checked = selectedUsers.includes(u.id);
@@ -444,6 +559,49 @@ export default function Schedule() {
                   );
                 })}
               </ScrollView>
+
+              <Text style={styles.bulkLabel}>SELECT DAYS *</Text>
+              <View style={styles.quickSelectRow}>
+                {[
+                  { key: "today", label: "Selected Day" },
+                  { key: "weekdays", label: "Weekdays" },
+                  { key: "all", label: "All Days" },
+                  { key: "clear", label: "Clear Days" },
+                ].map(option => (
+                  <TouchableOpacity
+                    key={option.key}
+                    testID={`bulk-date-select-${option.key}`}
+                    style={styles.quickSelectBtn}
+                    onPress={() => selectBulkDates(option.key as any)}
+                  >
+                    <Text style={styles.quickSelectText}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.bulkDateGrid}>
+                {weekDays.map((d, index) => {
+                  const dateKey = fmtDate(d);
+                  const checked = selectedDates.includes(dateKey);
+                  const weekend = d.getDay() === 0 || d.getDay() === 6;
+                  return (
+                    <TouchableOpacity
+                      key={dateKey}
+                      testID={`bulk-date-${dateKey}`}
+                      style={[
+                        styles.bulkDateChip,
+                        checked && styles.bulkDateChipActive,
+                        weekend && styles.bulkDateChipWeekend,
+                      ]}
+                      onPress={() => toggleBulkDate(dateKey)}
+                    >
+                      <Text style={[styles.bulkDateDow, checked && { color: "#fff" }]}>
+                        {DAY_LABELS[index % 7]}
+                      </Text>
+                      <Text style={[styles.bulkDateNum, checked && { color: "#fff" }]}>{d.getDate()}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
               <Text style={styles.bulkLabel}>SELECT SHIFT *</Text>
               <View style={styles.shiftPickGrid}>
@@ -591,6 +749,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 3,
   },
   bulkBtnText: { color: "#fff", fontSize: 15, fontWeight: "900" },
+  staffFilterBlock: { marginHorizontal: 20, marginBottom: 14 },
+  staffFilterLabel: { color: appTheme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, marginBottom: 8 },
+  staffFilterScroll: { gap: 8, paddingRight: 20 },
+  staffFilterChip: {
+    minHeight: 42, maxWidth: 190, flexDirection: "row", alignItems: "center", gap: 8,
+    borderColor: appTheme.border, borderWidth: 1, borderRadius: 14, backgroundColor: appTheme.surface,
+    paddingHorizontal: 12,
+  },
+  staffFilterChipActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
+  staffFilterAvatar: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: appTheme.purpleSoft,
+    alignItems: "center", justifyContent: "center",
+  },
+  staffFilterAvatarText: { color: appTheme.primary, fontSize: 11, fontWeight: "900" },
+  staffFilterText: { color: appTheme.text, fontSize: 12, fontWeight: "900", maxWidth: 126 },
   rosterRange: {
     marginHorizontal: 20, marginBottom: 26, padding: 18, borderRadius: 18,
     backgroundColor: appTheme.surface, borderColor: appTheme.border, borderWidth: 1,
@@ -674,11 +847,26 @@ const styles = StyleSheet.create({
   closeBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center" },
   bulkLabel: { color: "#6F7484", fontSize: 12, fontWeight: "900", letterSpacing: 0.8, marginHorizontal: 28, marginTop: 22, marginBottom: 10 },
   employeePicker: { marginHorizontal: 28, maxHeight: 190, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14 },
+  quickSelectRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 28, marginBottom: 10 },
+  quickSelectBtn: {
+    minHeight: 34, paddingHorizontal: 10, borderRadius: 10, borderColor: appTheme.border,
+    borderWidth: 1, backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center",
+  },
+  quickSelectText: { color: appTheme.text, fontSize: 11, fontWeight: "900" },
   employeePickRow: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderBottomColor: appTheme.border, borderBottomWidth: 1 },
   bulkAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
   bulkAvatarText: { color: "#fff", fontWeight: "900" },
   employeePickName: { color: appTheme.text, fontSize: 15, fontWeight: "800" },
   employeePickMeta: { color: appTheme.muted, fontSize: 12, marginTop: 2 },
+  bulkDateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 28, marginBottom: 6 },
+  bulkDateChip: {
+    width: 56, minHeight: 54, borderRadius: 14, borderColor: appTheme.border, borderWidth: 1,
+    backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center",
+  },
+  bulkDateChipActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
+  bulkDateChipWeekend: { borderStyle: "dashed" },
+  bulkDateDow: { color: appTheme.muted, fontSize: 9, fontWeight: "900", letterSpacing: 0.7 },
+  bulkDateNum: { color: appTheme.text, fontSize: 16, fontWeight: "900", marginTop: 2 },
   shiftPickGrid: { marginHorizontal: 28, gap: 8 },
   shiftPick: {
     minHeight: 54, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14,
