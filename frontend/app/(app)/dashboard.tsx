@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image,
+  View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router } from "expo-router";
@@ -9,6 +9,8 @@ import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { appTheme, colors, shiftLabel, roleLabel } from "@/src/theme";
+import { ThemeSwitch } from "@/src/components/ThemeSwitch";
+import { useThemeMode } from "@/src/theme-context";
 
 type DashboardData = {
   today_schedule: any;
@@ -28,6 +30,9 @@ type DashboardData = {
 
 export default function Dashboard() {
   const { user, isAdmin } = useAuth();
+  const { width } = useWindowDimensions();
+  const { theme } = useThemeMode();
+  const isMobile = width < 760;
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +59,7 @@ export default function Dashboard() {
   const attendanceRate = totalEmployees > 0 ? Math.min(100, Math.round((presentToday / totalEmployees) * 100)) : 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={appTheme.primary} />}
@@ -62,19 +67,22 @@ export default function Dashboard() {
       >
         <View style={styles.topBar}>
           <View>
-            <Text style={styles.pageTitle}>Dashboard</Text>
-            <Text style={styles.pageDate}>{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</Text>
+            <Text style={[styles.pageTitle, { color: theme.text }]}>Dashboard</Text>
+            <Text style={[styles.pageDate, { color: theme.muted }]}>{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</Text>
           </View>
           <View style={styles.topActions}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push("/(app)/admin")}>
-              <Ionicons name="notifications-outline" size={20} color={appTheme.muted} />
+            <View style={styles.themeTop}>
+              <ThemeSwitch compact />
+            </View>
+            <TouchableOpacity style={[styles.iconBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => router.push("/(app)/admin")}>
+              <Ionicons name="notifications-outline" size={20} color={theme.muted} />
               {isAdmin && (data?.admin?.pending_leave_approvals || 0) > 0 && (
                 <View style={styles.notifyBadge}>
                   <Text style={styles.notifyText}>{data?.admin?.pending_leave_approvals}</Text>
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity testID="dashboard-profile-btn" onPress={() => router.push("/(app)/profile")} style={styles.avatarBtn}>
+            <TouchableOpacity testID="dashboard-profile-btn" onPress={() => router.push("/(app)/profile")} style={[styles.avatarBtn, { backgroundColor: theme.primary }]}>
               {user?.avatar_url ? (
                 <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
               ) : (
@@ -86,7 +94,7 @@ export default function Dashboard() {
 
         {error && <Text style={styles.errorText}>{error}</Text>}
 
-        <View style={styles.hero}>
+        <View style={[styles.hero, isMobile && styles.heroMobile]}>
           <View style={styles.heroOrbOne} />
           <View style={styles.heroOrbTwo} />
           <View style={{ flex: 1 }}>
@@ -94,8 +102,8 @@ export default function Dashboard() {
             <Text style={styles.heroTitle} testID="dashboard-user-name">Welcome Back!</Text>
             <Text style={styles.heroSub}>Here's what's happening with your team today.</Text>
           </View>
-          <View style={styles.rateCard}>
-            <View style={styles.rateRing}>
+          <View style={[styles.rateCard, isMobile && styles.rateCardMobile]}>
+            <View style={[styles.rateRing, isMobile && styles.rateRingMobile]}>
               <Text style={styles.rateText}>{attendanceRate}%</Text>
             </View>
             <View>
@@ -249,6 +257,7 @@ const styles = StyleSheet.create({
   pageTitle: { color: appTheme.text, fontSize: 24, fontWeight: "900" },
   pageDate: { color: appTheme.muted, fontSize: 13, marginTop: 2 },
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  themeTop: { width: 158 },
   iconBtn: {
     width: 44, height: 44, borderRadius: 12, backgroundColor: appTheme.surface,
     borderColor: appTheme.border, borderWidth: 1, alignItems: "center", justifyContent: "center",
@@ -266,6 +275,14 @@ const styles = StyleSheet.create({
     padding: 28, marginBottom: 30, overflow: "hidden", flexDirection: "row",
     alignItems: "center", gap: 24,
   },
+  heroMobile: {
+    minHeight: 0,
+    borderRadius: 22,
+    padding: 20,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 16,
+  },
   heroOrbOne: {
     position: "absolute", width: 230, height: 230, borderRadius: 115,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", left: 250, top: 55,
@@ -282,6 +299,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.14)",
     borderWidth: 1, borderRadius: 20, padding: 22,
   },
+  rateCardMobile: { minWidth: "100%", width: "100%", padding: 16, gap: 14 },
+  rateRingMobile: { width: 68, height: 68, borderRadius: 34, borderWidth: 7 },
   rateRing: {
     width: 86, height: 86, borderRadius: 43, borderWidth: 9, borderColor: "#A78BFA",
     alignItems: "center", justifyContent: "center",

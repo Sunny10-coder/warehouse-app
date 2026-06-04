@@ -10,12 +10,17 @@ import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { appTheme, colors, shiftLabel, shiftColor } from "@/src/theme";
+import { ThemeSwitch } from "@/src/components/ThemeSwitch";
+import { useThemeMode } from "@/src/theme-context";
 
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const ASSIGN_SHIFTS = [
   { key: "morning", label: "Day Shift", time: "07:00 - 16:00", color: appTheme.primary },
+  { key: "admin", label: "Admin Shift", time: "07:30 - 16:30", color: appTheme.blue },
   { key: "afternoon", label: "Afternoon Shift", time: "12:00 - 21:00", color: appTheme.green },
   { key: "night", label: "Night Shift", time: "21:00 - 06:00", color: appTheme.yellow },
+  { key: "annual", label: "Vacation", time: "Preplanned leave", color: appTheme.green, saveAs: "leave", notes: "Preplanned vacation" },
+  { key: "comp_off", label: "Comp Off", time: "Preplanned leave", color: appTheme.blue, saveAs: "leave", notes: "Preplanned comp off" },
   { key: "off", label: "Weekly Off", time: "Not scheduled", color: appTheme.muted },
 ];
 
@@ -42,6 +47,7 @@ function fmtDate(d: Date) {
 
 export default function Schedule() {
   const { user, isAdmin } = useAuth();
+  const { theme } = useThemeMode();
   const params = useLocalSearchParams<{ start?: string; weeks?: string }>();
   const rangeWeeks = params.weeks === "4" ? 4 : 2;
   const rangeLength = rangeWeeks * 7;
@@ -157,16 +163,20 @@ export default function Schedule() {
     }
     setSavingBulk(true);
     try {
-      const dates = weekDays.map(fmtDate);
+      const chosenShift = ASSIGN_SHIFTS.find(s => s.key === bulkShift);
+      const dates = weekDays
+        .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
+        .map(fmtDate);
       await Promise.all(selectedUsers.flatMap(userId =>
         dates.map(shift_date => api.post("/schedules", {
           user_id: userId,
           shift_date,
-          shift_type: bulkShift,
+          shift_type: chosenShift?.saveAs || bulkShift,
+          notes: chosenShift?.notes,
         }))
       ));
       setBulkOpen(false);
-      Alert.alert("Schedule updated", "Selected shifts were assigned.");
+      Alert.alert("Schedule updated", "Selected weekday shifts were assigned.");
       await load();
     } catch (e) {
       Alert.alert("Could not assign", errMsg(e));
@@ -176,13 +186,16 @@ export default function Schedule() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Schedules</Text>
-          <Text style={styles.rangeLabel}>
+          <Text style={[styles.title, { color: theme.text }]}>Schedules</Text>
+          <Text style={[styles.rangeLabel, { color: theme.muted }]}>
             {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </Text>
+        </View>
+        <View style={styles.scheduleThemeSwitch}>
+          <ThemeSwitch compact />
         </View>
         <TouchableOpacity style={styles.avatarTop} onPress={() => router.push("/(app)/profile")}>
           <Text style={styles.avatarTopText}>{String(user?.full_name || "U").slice(0, 1).toUpperCase()}</Text>
@@ -404,7 +417,7 @@ export default function Schedule() {
               <View style={styles.bulkHeader}>
                 <View>
                   <Text style={styles.bulkTitle}>Bulk Assign Shifts</Text>
-                  <Text style={styles.bulkSub}>Assign to multiple employees for {rangeWeeks} weeks</Text>
+                  <Text style={styles.bulkSub}>Assign weekdays only for {rangeWeeks} weeks</Text>
                 </View>
                 <TouchableOpacity style={styles.closeBtn} onPress={() => setBulkOpen(false)}>
                   <Ionicons name="close" size={20} color={appTheme.muted} />
@@ -553,6 +566,7 @@ const styles = StyleSheet.create({
   rangeLabel: { color: appTheme.muted, fontSize: 13, marginTop: 2, fontWeight: "700" },
   avatarTop: { width: 44, height: 44, borderRadius: 22, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
   avatarTopText: { color: "#fff", fontSize: 16, fontWeight: "900" },
+  scheduleThemeSwitch: { width: 150, marginRight: 10 },
   navBtn: {
     width: 44, height: 44, alignItems: "center", justifyContent: "center",
     borderColor: appTheme.border, borderWidth: 1, borderRadius: 12, backgroundColor: appTheme.surface,

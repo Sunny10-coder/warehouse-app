@@ -3,9 +3,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useAuth } from "@/src/auth";
 import { appTheme, colors } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 export default function AppLayout() {
   const { user, loading, isAdmin } = useAuth();
+  const { theme } = useThemeMode();
 
   if (loading) {
     return (
@@ -21,11 +23,11 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: appTheme.primary,
-        tabBarInactiveTintColor: appTheme.muted,
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.muted,
         tabBarStyle: {
-          backgroundColor: appTheme.surface,
-          borderTopColor: appTheme.border,
+          backgroundColor: theme.surface,
+          borderTopColor: theme.border,
           borderTopWidth: 1,
           height: 72,
           paddingBottom: 10,

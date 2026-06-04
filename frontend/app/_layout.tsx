@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
+import { ThemeProvider, useThemeMode } from "@/src/theme-context";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -22,16 +23,27 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: "#0A0A0A" },
-            animation: "fade",
-          }}
-        />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <RootStack />
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+function RootStack() {
+  const { theme, isClassic } = useThemeMode();
+  return (
+    <>
+      <StatusBar style={isClassic ? "light" : "dark"} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.bg },
+          animation: "fade",
+        }}
+      />
+    </>
   );
 }
