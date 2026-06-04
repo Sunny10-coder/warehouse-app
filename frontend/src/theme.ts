@@ -96,3 +96,26 @@ export const leaveColor = (t: string) => {
     default: return colors.textSecondary;
   }
 };
+
+export const appTheme = {
+  bg: "#F3F1FF",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F8F7FF",
+  surfaceLavender: "#EEEAFD",
+  border: "#E5E1F6",
+  text: "#09052D",
+  muted: "#9BA0B3",
+  primary: "#7461F2",
+  primaryDark: "#28166F",
+  primaryDeep: "#1E125B",
+  purpleSoft: "#E8E3FF",
+  green: "#10B981",
+  greenSoft: "#D4F8E6",
+  yellow: "#F59E0B",
+  yellowSoft: "#FFF2BF",
+  red: "#EF4444",
+  redSoft: "#FBE0E1",
+  blue: "#3B82F6",
+  blueSoft: "#DDEBFF",
+  shadow: "rgba(60, 48, 130, 0.16)",
+} as const;

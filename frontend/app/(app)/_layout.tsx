@@ -2,7 +2,7 @@ import { Tabs, Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useAuth } from "@/src/auth";
-import { colors } from "@/src/theme";
+import { appTheme, colors } from "@/src/theme";
 
 export default function AppLayout() {
   const { user, loading, isAdmin } = useAuth();
@@ -21,14 +21,14 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.morning,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarActiveTintColor: appTheme.primary,
+        tabBarInactiveTintColor: appTheme.muted,
         tabBarStyle: {
-          backgroundColor: colors.bg,
-          borderTopColor: colors.border,
+          backgroundColor: appTheme.surface,
+          borderTopColor: appTheme.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
+          height: 72,
+          paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
@@ -85,5 +85,5 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
-  loader: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
+  loader: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: appTheme.bg },
 });
