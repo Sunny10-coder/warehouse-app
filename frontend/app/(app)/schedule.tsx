@@ -9,20 +9,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
-import { appTheme, colors, shiftLabel, shiftColor } from "@/src/theme";
+import { colors, shiftLabel, shiftColor } from "@/src/theme";
 import { ThemeSwitch } from "@/src/components/ThemeSwitch";
 import { useThemeMode } from "@/src/theme-context";
 
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-const ASSIGN_SHIFTS = [
-  { key: "morning", label: "Day Shift", time: "07:00 - 16:00", color: appTheme.primary },
-  { key: "admin", label: "Admin Shift", time: "07:30 - 16:30", color: appTheme.blue },
-  { key: "afternoon", label: "Afternoon Shift", time: "12:00 - 21:00", color: appTheme.green },
-  { key: "night", label: "Night Shift", time: "21:00 - 06:00", color: appTheme.yellow },
-  { key: "annual", label: "Vacation", time: "Preplanned leave", color: appTheme.green, saveAs: "leave", notes: "Preplanned vacation" },
-  { key: "comp_off", label: "Comp Off", time: "Preplanned leave", color: appTheme.blue, saveAs: "leave", notes: "Preplanned comp off" },
-  { key: "off", label: "Weekly Off", time: "Not scheduled", color: appTheme.muted },
-];
+const DEFAULT_SHIFT_OPTIONS = ["morning", "afternoon", "night", "admin", "ega", "off"];
 
 function startOfWeek(d = new Date()) {
   const day = d.getDay(); // 0=Sun
@@ -48,6 +40,18 @@ function fmtDate(d: Date) {
 export default function Schedule() {
   const { user, isAdmin } = useAuth();
   const { theme } = useThemeMode();
+  const styles = useMemo(() => getStyles(theme), [theme]);
+
+  const assignShifts = useMemo(() => [
+    { key: "morning", label: "Day Shift", time: "07:00 - 16:00", color: theme.primary },
+    { key: "admin", label: "Admin Shift", time: "07:30 - 16:30", color: theme.blue },
+    { key: "afternoon", label: "Afternoon Shift", time: "12:00 - 21:00", color: theme.green },
+    { key: "night", label: "Night Shift", time: "21:00 - 06:00", color: theme.yellow },
+    { key: "annual", label: "Vacation", time: "Preplanned leave", color: theme.green, saveAs: "leave", notes: "Preplanned vacation" },
+    { key: "comp_off", label: "Comp Off", time: "Preplanned leave", color: theme.blue, saveAs: "leave", notes: "Preplanned comp off" },
+    { key: "off", label: "Weekly Off", time: "Not scheduled", color: theme.muted },
+  ], [theme]);
+
   const params = useLocalSearchParams<{ start?: string; weeks?: string }>();
   const rangeWeeks = params.weeks === "4" ? 4 : 2;
   const rangeLength = rangeWeeks * 7;
@@ -63,6 +67,7 @@ export default function Schedule() {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [bulkShift, setBulkShift] = useState("morning");
   const [savingBulk, setSavingBulk] = useState(false);
+  const [alsoUpdateDefaultShift, setAlsoUpdateDefaultShift] = useState(false);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: rangeLength }, (_, i) => {
@@ -225,6 +230,7 @@ export default function Schedule() {
     setSelectedUsers([]);
     setSelectedDates([selectedDate]);
     setBulkShift("morning");
+    setAlsoUpdateDefaultShift(false);
     setBulkOpen(true);
   };
 
@@ -232,7 +238,30 @@ export default function Schedule() {
     setSelectedUsers([userId]);
     setSelectedDates([dateKey]);
     setBulkShift(shiftType && shiftType !== "leave" ? shiftType : "morning");
+    setAlsoUpdateDefaultShift(false);
     setBulkOpen(true);
+  };
+
+  const openInlineDefaultShiftPicker = (targetUser: any) => {
+    Alert.alert(
+      `Set Default Shift`,
+      `Choose default shift for ${targetUser.full_name}:`,
+      [
+        { text: "Cancel", style: "cancel" },
+        ...DEFAULT_SHIFT_OPTIONS.map(s => ({
+          text: shiftLabel[s] || s,
+          onPress: async () => {
+            try {
+              await api.patch(`/users/${targetUser.id}`, { default_shift: s });
+              Alert.alert("Success", `Default shift for ${targetUser.full_name} updated to ${shiftLabel[s] || s}.`);
+              await load();
+            } catch (err) {
+              Alert.alert("Error", errMsg(err));
+            }
+          }
+        }))
+      ]
+    );
   };
 
   const saveBulkAssign = async () => {
@@ -240,23 +269,39 @@ export default function Schedule() {
       Alert.alert("Select employees", "Choose at least one employee.");
       return;
     }
-    if (!selectedDates.length) {
-      Alert.alert("Select days", "Choose at least one date to update.");
+    if (!selectedDates.length && !alsoUpdateDefaultShift) {
+      Alert.alert("Select days", "Choose at least one date to update, or check 'Also save as Default Shift'.");
       return;
     }
     setSavingBulk(true);
     try {
-      const chosenShift = ASSIGN_SHIFTS.find(s => s.key === bulkShift);
-      await Promise.all(selectedUsers.flatMap(userId =>
-        selectedDates.map(shift_date => api.post("/schedules", {
-          user_id: userId,
-          shift_date,
-          shift_type: chosenShift?.saveAs || bulkShift,
-          notes: chosenShift?.notes,
-        }))
-      ));
+      const chosenShift = assignShifts.find(s => s.key === bulkShift);
+      const shiftToSave = chosenShift?.saveAs || bulkShift;
+      
+      const promises: Promise<any>[] = [];
+      
+      if (alsoUpdateDefaultShift) {
+        selectedUsers.forEach(userId => {
+          promises.push(api.patch(`/users/${userId}`, { default_shift: shiftToSave }));
+        });
+      }
+      
+      if (selectedDates.length) {
+        selectedUsers.forEach(userId => {
+          selectedDates.forEach(shift_date => {
+            promises.push(api.post("/schedules", {
+              user_id: userId,
+              shift_date,
+              shift_type: shiftToSave,
+              notes: chosenShift?.notes,
+            }));
+          });
+        });
+      }
+
+      await Promise.all(promises);
       setBulkOpen(false);
-      Alert.alert("Schedule updated", "Selected weekday shifts were assigned.");
+      Alert.alert("Success", "Schedule/default shifts updated successfully.");
       await load();
     } catch (e) {
       Alert.alert("Could not assign", errMsg(e));
@@ -321,7 +366,7 @@ export default function Schedule() {
               style={[styles.staffFilterChip, selectedStaffId === "all" && styles.staffFilterChipActive]}
               onPress={() => setSelectedStaffId("all")}
             >
-              <Ionicons name="people" size={14} color={selectedStaffId === "all" ? "#fff" : appTheme.primary} />
+              <Ionicons name="people" size={14} color={selectedStaffId === "all" ? "#fff" : theme.primary} />
               <Text style={[styles.staffFilterText, selectedStaffId === "all" && { color: "#fff" }]}>All Staff</Text>
             </TouchableOpacity>
             {sheetUsers.map((u: any) => {
@@ -358,7 +403,7 @@ export default function Schedule() {
             setWeekStart(d);
           }}
         >
-          <Ionicons name="chevron-back" size={20} color={appTheme.primary} />
+          <Ionicons name="chevron-back" size={20} color={theme.primary} />
         </TouchableOpacity>
         <View style={{ alignItems: "center", flex: 1 }}>
           <Text style={styles.rosterRangeTitle}>
@@ -375,7 +420,7 @@ export default function Schedule() {
             setWeekStart(d);
           }}
         >
-          <Ionicons name="chevron-forward" size={20} color={appTheme.primary} />
+          <Ionicons name="chevron-forward" size={20} color={theme.primary} />
         </TouchableOpacity>
       </View>
 
@@ -398,7 +443,7 @@ export default function Schedule() {
               <Text style={[styles.coverageNum, active && { color: "#fff" }]}>{d.getDate()}</Text>
               <View style={styles.coverageCounts}>
                 <Text style={[styles.coverageCountText, active && { color: "#fff" }]}>Work {info.working}</Text>
-                <Text style={[styles.coverageCountText, { color: appTheme.green }, active && { color: "#fff" }]}>Leave {info.leave}</Text>
+                <Text style={[styles.coverageCountText, { color: theme.green }, active && { color: "#fff" }]}>Leave {info.leave}</Text>
               </View>
             </TouchableOpacity>
           );
@@ -462,14 +507,14 @@ export default function Schedule() {
                           style={[
                             styles.sheetShiftCell,
                             !entry && styles.emptyShiftCell,
-                            { borderColor: entry ? sc.c : appTheme.border, backgroundColor: entry ? tintForShift(entry.shift_type) : appTheme.surface },
+                            { borderColor: entry ? sc.c : theme.border, backgroundColor: entry ? tintForShift(entry.shift_type, theme) : theme.surface },
                           ]}
                           onPress={() => {
                             setSelectedDay(i);
                             if (isAdmin) openSingleAssign(u.id, dateKey, entry?.shift_type);
                           }}
                         >
-                          <Text style={[styles.sheetShiftText, { color: entry ? colorForShift(entry.shift_type) : appTheme.muted }]}>
+                          <Text style={[styles.sheetShiftText, { color: entry ? colorForShift(entry.shift_type, theme) : theme.muted }]}>
                             {entry ? shortShift(entry.shift_type) : "+"}
                           </Text>
                           {entry?.start_time ? (
@@ -562,135 +607,158 @@ export default function Schedule() {
                   <Text style={styles.bulkSub}>{selectedUsers.length} employee(s) · {selectedDates.length} day(s)</Text>
                 </View>
                 <TouchableOpacity style={styles.closeBtn} onPress={() => setBulkOpen(false)}>
-                  <Ionicons name="close" size={20} color={appTheme.muted} />
+                  <Ionicons name="close" size={20} color={theme.muted} />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.bulkLabel}>SELECT EMPLOYEES *</Text>
-              <View style={styles.bulkHelperBox}>
-                <Text style={styles.bulkHelperTitle}>Staff selection</Text>
-                <Text style={styles.bulkHelperText}>Tap one employee, several employees, or use a shortcut. Current Day/Night uses the schedule already shown for your selected date(s).</Text>
-              </View>
-              <View style={styles.quickSelectRow}>
-                {[
-                  { key: "current_morning", label: "Current Day" },
-                  { key: "current_night", label: "Current Night" },
-                  { key: "morning", label: "Default Day" },
-                  { key: "night", label: "Default Night" },
-                  { key: "admin", label: "Admin" },
-                  { key: "all", label: "All Staff" },
-                  { key: "clear", label: "Clear" },
-                ].map(option => (
-                  <TouchableOpacity
-                    key={option.key}
-                    testID={`bulk-select-${option.key}`}
-                    style={styles.quickSelectBtn}
-                    onPress={() => {
-                      if (option.key === "current_morning") selectUsersByScheduledShift("morning");
-                      else if (option.key === "current_night") selectUsersByScheduledShift("night");
-                      else selectUsersByDefaultShift(option.key);
-                    }}
-                  >
-                    <Text style={styles.quickSelectText}>{option.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <ScrollView style={styles.employeePicker}>
-                {sheetUsers.map((u: any) => {
-                  const checked = selectedUsers.includes(u.id);
-                  return (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                <Text style={styles.bulkLabel}>SELECT EMPLOYEES *</Text>
+                <View style={styles.bulkHelperBox}>
+                  <Text style={styles.bulkHelperTitle}>Staff selection</Text>
+                  <Text style={styles.bulkHelperText}>Tap one employee, several employees, or use a shortcut. Current Day/Night uses the schedule already shown for your selected date(s).</Text>
+                </View>
+                <View style={styles.quickSelectRow}>
+                  {[
+                    { key: "current_morning", label: "Current Day" },
+                    { key: "current_night", label: "Current Night" },
+                    { key: "morning", label: "Default Day" },
+                    { key: "night", label: "Default Night" },
+                    { key: "admin", label: "Admin" },
+                    { key: "all", label: "All Staff" },
+                    { key: "clear", label: "Clear" },
+                  ].map(option => (
                     <TouchableOpacity
-                      key={u.id}
-                      style={[styles.employeePickRow, checked && styles.employeePickRowActive]}
-                      onPress={() => toggleBulkUser(u.id)}
+                      key={option.key}
+                      testID={`bulk-select-${option.key}`}
+                      style={styles.quickSelectBtn}
+                      onPress={() => {
+                        if (option.key === "current_morning") selectUsersByScheduledShift("morning");
+                        else if (option.key === "current_night") selectUsersByScheduledShift("night");
+                        else selectUsersByDefaultShift(option.key);
+                      }}
                     >
-                      <Ionicons name={checked ? "checkbox" : "square-outline"} size={22} color={checked ? appTheme.primary : appTheme.muted} />
-                      {u.avatar_url ? (
-                        <Image source={{ uri: u.avatar_url }} style={styles.bulkAvatar} />
-                      ) : (
-                        <View style={styles.bulkAvatar}><Text style={styles.bulkAvatarText}>{String(u.full_name || "?").slice(0, 1).toUpperCase()}</Text></View>
-                      )}
-                      <View>
-                        <Text style={styles.employeePickName}>{u.full_name}</Text>
-                        <Text style={styles.employeePickMeta}>
-                          {u.team ? `Team ${u.team}` : "Management"} · {shiftLabel[u.default_shift || ""] || "No default shift"}
+                      <Text style={styles.quickSelectText}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <ScrollView style={styles.employeePicker} nestedScrollEnabled>
+                  {sheetUsers.map((u: any) => {
+                    const checked = selectedUsers.includes(u.id);
+                    return (
+                      <TouchableOpacity
+                        key={u.id}
+                        style={[styles.employeePickRow, checked && styles.employeePickRowActive]}
+                        onPress={() => toggleBulkUser(u.id)}
+                      >
+                        <Ionicons name={checked ? "checkbox" : "square-outline"} size={22} color={checked ? theme.primary : theme.muted} />
+                        {u.avatar_url ? (
+                          <Image source={{ uri: u.avatar_url }} style={styles.bulkAvatar} />
+                        ) : (
+                          <View style={styles.bulkAvatar}><Text style={styles.bulkAvatarText}>{String(u.full_name || "?").slice(0, 1).toUpperCase()}</Text></View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.employeePickName}>{u.full_name}</Text>
+                          <Text style={styles.employeePickMeta}>
+                            {u.team ? `Team ${u.team}` : "Management"}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.inlineShiftBtn}
+                          onPress={() => openInlineDefaultShiftPicker(u)}
+                        >
+                          <Text style={styles.inlineShiftText}>
+                            {shiftLabel[u.default_shift || ""] || "Set Default"}
+                          </Text>
+                          <Ionicons name="chevron-down" size={12} color={theme.muted} />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                <Text style={styles.bulkLabel}>SELECT DAYS *</Text>
+                <View style={styles.bulkHelperBox}>
+                  <Text style={styles.bulkHelperTitle}>Date selection</Text>
+                  <Text style={styles.bulkHelperText}>Pick one day for single-duty coverage, or select multiple dates for repeated assignment.</Text>
+                </View>
+                <View style={styles.quickSelectRow}>
+                  {[
+                    { key: "today", label: "Selected Day" },
+                    { key: "weekdays", label: "Weekdays" },
+                    { key: "all", label: "All Days" },
+                    { key: "clear", label: "Clear Days" },
+                  ].map(option => (
+                    <TouchableOpacity
+                      key={option.key}
+                      testID={`bulk-date-select-${option.key}`}
+                      style={styles.quickSelectBtn}
+                      onPress={() => selectBulkDates(option.key as any)}
+                    >
+                      <Text style={styles.quickSelectText}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.bulkDateGrid}>
+                  {weekDays.map((d, index) => {
+                    const dateKey = fmtDate(d);
+                    const checked = selectedDates.includes(dateKey);
+                    const weekend = d.getDay() === 0 || d.getDay() === 6;
+                    return (
+                      <TouchableOpacity
+                        key={dateKey}
+                        testID={`bulk-date-${dateKey}`}
+                        style={[
+                          styles.bulkDateChip,
+                          checked && styles.bulkDateChipActive,
+                          weekend && styles.bulkDateChipWeekend,
+                        ]}
+                        onPress={() => toggleBulkDate(dateKey)}
+                      >
+                        <Text style={[styles.bulkDateDow, checked && { color: "#fff" }]}>
+                          {DAY_LABELS[index % 7]}
                         </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <Text style={[styles.bulkDateNum, checked && { color: "#fff" }]}>{d.getDate()}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.bulkLabel}>SELECT SHIFT *</Text>
+                <View style={styles.bulkHelperBox}>
+                  <Text style={styles.bulkHelperTitle}>Shift to apply</Text>
+                  <Text style={styles.bulkHelperText}>This overwrites the selected employee/date schedule cells only.</Text>
+                </View>
+                <View style={styles.shiftPickGrid}>
+                  {assignShifts.map(s => {
+                    const selected = bulkShift === s.key;
+                    return (
+                      <TouchableOpacity
+                        key={s.key}
+                        style={[styles.shiftPick, selected && { borderColor: s.color, backgroundColor: `${s.color}18` }]}
+                        onPress={() => setBulkShift(s.key)}
+                      >
+                        <View style={[styles.shiftDot, { backgroundColor: s.color }]} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.shiftPickLabel, selected && { color: s.color }]}>{s.label}</Text>
+                          <Text style={styles.shiftPickTime}>{s.time}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.defaultShiftCheckboxRow}
+                  onPress={() => setAlsoUpdateDefaultShift(prev => !prev)}
+                >
+                  <Ionicons
+                    name={alsoUpdateDefaultShift ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={alsoUpdateDefaultShift ? theme.primary : theme.muted}
+                  />
+                  <Text style={styles.defaultShiftCheckboxText}>Also save as Default Shift for selected employees</Text>
+                </TouchableOpacity>
               </ScrollView>
-
-              <Text style={styles.bulkLabel}>SELECT DAYS *</Text>
-              <View style={styles.bulkHelperBox}>
-                <Text style={styles.bulkHelperTitle}>Date selection</Text>
-                <Text style={styles.bulkHelperText}>Pick one day for single-duty coverage, or select multiple dates for repeated assignment.</Text>
-              </View>
-              <View style={styles.quickSelectRow}>
-                {[
-                  { key: "today", label: "Selected Day" },
-                  { key: "weekdays", label: "Weekdays" },
-                  { key: "all", label: "All Days" },
-                  { key: "clear", label: "Clear Days" },
-                ].map(option => (
-                  <TouchableOpacity
-                    key={option.key}
-                    testID={`bulk-date-select-${option.key}`}
-                    style={styles.quickSelectBtn}
-                    onPress={() => selectBulkDates(option.key as any)}
-                  >
-                    <Text style={styles.quickSelectText}>{option.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.bulkDateGrid}>
-                {weekDays.map((d, index) => {
-                  const dateKey = fmtDate(d);
-                  const checked = selectedDates.includes(dateKey);
-                  const weekend = d.getDay() === 0 || d.getDay() === 6;
-                  return (
-                    <TouchableOpacity
-                      key={dateKey}
-                      testID={`bulk-date-${dateKey}`}
-                      style={[
-                        styles.bulkDateChip,
-                        checked && styles.bulkDateChipActive,
-                        weekend && styles.bulkDateChipWeekend,
-                      ]}
-                      onPress={() => toggleBulkDate(dateKey)}
-                    >
-                      <Text style={[styles.bulkDateDow, checked && { color: "#fff" }]}>
-                        {DAY_LABELS[index % 7]}
-                      </Text>
-                      <Text style={[styles.bulkDateNum, checked && { color: "#fff" }]}>{d.getDate()}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={styles.bulkLabel}>SELECT SHIFT *</Text>
-              <View style={styles.bulkHelperBox}>
-                <Text style={styles.bulkHelperTitle}>Shift to apply</Text>
-                <Text style={styles.bulkHelperText}>This overwrites the selected employee/date schedule cells only.</Text>
-              </View>
-              <View style={styles.shiftPickGrid}>
-                {ASSIGN_SHIFTS.map(s => {
-                  const selected = bulkShift === s.key;
-                  return (
-                    <TouchableOpacity
-                      key={s.key}
-                      style={[styles.shiftPick, selected && { borderColor: s.color, backgroundColor: `${s.color}18` }]}
-                      onPress={() => setBulkShift(s.key)}
-                    >
-                      <View style={[styles.shiftDot, { backgroundColor: s.color }]} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.shiftPickLabel, selected && { color: s.color }]}>{s.label}</Text>
-                        <Text style={styles.shiftPickTime}>{s.time}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
 
               <View style={styles.bulkActions}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setBulkOpen(false)}>
@@ -741,229 +809,258 @@ function shortShift(t?: string | null) {
   }
 }
 
-function colorForShift(t?: string | null) {
+function colorForShift(t: string | null | undefined, theme: any) {
   switch (t) {
     case "morning":
     case "sat_day":
     case "sun_day":
-      return appTheme.primary;
+      return theme.primary;
     case "afternoon":
-      return appTheme.green;
+      return theme.green;
     case "night":
     case "sat_night":
     case "sun_night":
-      return appTheme.yellow;
+      return theme.yellow;
     case "leave":
-      return appTheme.blue;
+      return theme.blue;
     case "off":
-      return appTheme.muted;
+      return theme.muted;
     default:
-      return appTheme.primary;
+      return theme.primary;
   }
 }
 
-function tintForShift(t?: string | null) {
+function tintForShift(t: string | null | undefined, theme: any) {
   switch (t) {
     case "morning":
     case "sat_day":
     case "sun_day":
-      return appTheme.purpleSoft;
+      return theme.purpleSoft;
     case "afternoon":
-      return appTheme.greenSoft;
+      return theme.greenSoft;
     case "night":
     case "sat_night":
     case "sun_night":
-      return appTheme.yellowSoft;
+      return theme.yellowSoft;
     case "leave":
-      return appTheme.blueSoft;
+      return theme.blueSoft;
     case "off":
-      return appTheme.surfaceSoft;
+      return theme.surfaceSoft;
     default:
-      return appTheme.surface;
+      return theme.surface;
   }
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: appTheme.bg },
+const getStyles = (theme: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection: "row", paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14,
-    alignItems: "center", backgroundColor: appTheme.surface, borderBottomColor: appTheme.border, borderBottomWidth: 1,
+    alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.border, borderBottomWidth: 1,
   },
-  title: { color: appTheme.text, fontSize: 22, fontWeight: "900" },
-  rangeLabel: { color: appTheme.muted, fontSize: 13, marginTop: 2, fontWeight: "700" },
-  avatarTop: { width: 44, height: 44, borderRadius: 22, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
+  title: { color: theme.text, fontSize: 22, fontWeight: "900" },
+  rangeLabel: { color: theme.muted, fontSize: 13, marginTop: 2, fontWeight: "700" },
+  avatarTop: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.primary, alignItems: "center", justifyContent: "center" },
   avatarTopText: { color: "#fff", fontSize: 16, fontWeight: "900" },
   scheduleThemeSwitch: { width: 150, marginRight: 10 },
   navBtn: {
     width: 44, height: 44, alignItems: "center", justifyContent: "center",
-    borderColor: appTheme.border, borderWidth: 1, borderRadius: 12, backgroundColor: appTheme.surface,
+    borderColor: theme.border, borderWidth: 1, borderRadius: 12, backgroundColor: theme.surface,
   },
   toggleRow: {
     flexDirection: "row", marginHorizontal: 20, marginTop: 16, marginBottom: 12,
-    backgroundColor: appTheme.surface, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14, padding: 4,
+    backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 4,
   },
   toggleBtn: { flex: 1, paddingVertical: 9, alignItems: "center", borderRadius: 10 },
-  toggleBtnActive: { backgroundColor: appTheme.primary },
-  toggleText: { color: appTheme.muted, fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  toggleBtnActive: { backgroundColor: theme.primary },
+  toggleText: { color: theme.muted, fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
   toggleTextActive: { color: "#fff" },
   scheduleIntro: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 20, marginTop: 22, marginBottom: 16,
   },
-  sheetTitle: { color: appTheme.text, fontSize: 28, fontWeight: "900" },
-  sheetHint: { color: appTheme.muted, fontSize: 14, marginTop: 4 },
+  sheetTitle: { color: theme.text, fontSize: 28, fontWeight: "900" },
+  sheetHint: { color: theme.muted, fontSize: 14, marginTop: 4 },
   bulkBtn: {
-    height: 46, paddingHorizontal: 20, borderRadius: 14, backgroundColor: appTheme.primary,
-    flexDirection: "row", alignItems: "center", gap: 8, shadowColor: appTheme.primary,
+    height: 46, paddingHorizontal: 20, borderRadius: 14, backgroundColor: theme.primary,
+    flexDirection: "row", alignItems: "center", gap: 8, shadowColor: theme.primary,
     shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 3,
   },
   bulkBtnText: { color: "#fff", fontSize: 15, fontWeight: "900" },
   staffFilterBlock: { marginHorizontal: 20, marginBottom: 14 },
-  staffFilterLabel: { color: appTheme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, marginBottom: 8 },
+  staffFilterLabel: { color: theme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, marginBottom: 8 },
   staffFilterScroll: { gap: 8, paddingRight: 20 },
   staffFilterChip: {
     minHeight: 42, maxWidth: 190, flexDirection: "row", alignItems: "center", gap: 8,
-    borderColor: appTheme.border, borderWidth: 1, borderRadius: 14, backgroundColor: appTheme.surface,
+    borderColor: theme.border, borderWidth: 1, borderRadius: 14, backgroundColor: theme.surface,
     paddingHorizontal: 12,
   },
-  staffFilterChipActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
+  staffFilterChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
   staffFilterAvatar: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: appTheme.purpleSoft,
+    width: 24, height: 24, borderRadius: 12, backgroundColor: theme.purpleSoft,
     alignItems: "center", justifyContent: "center",
   },
-  staffFilterAvatarText: { color: appTheme.primary, fontSize: 11, fontWeight: "900" },
-  staffFilterText: { color: appTheme.text, fontSize: 12, fontWeight: "900", maxWidth: 126 },
+  staffFilterAvatarText: { color: theme.primary, fontSize: 11, fontWeight: "900" },
+  staffFilterText: { color: theme.text, fontSize: 12, fontWeight: "900", maxWidth: 126 },
   rosterRange: {
     marginHorizontal: 20, marginBottom: 12, padding: 18, borderRadius: 18,
-    backgroundColor: appTheme.surface, borderColor: appTheme.border, borderWidth: 1,
+    backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1,
     flexDirection: "row", alignItems: "center", gap: 14,
   },
-  rosterRangeTitle: { color: appTheme.text, fontSize: 19, fontWeight: "900", textAlign: "center" },
-  rosterRangeSub: { color: appTheme.muted, fontSize: 13, marginTop: 4 },
+  rosterRangeTitle: { color: theme.text, fontSize: 19, fontWeight: "900", textAlign: "center" },
+  rosterRangeSub: { color: theme.muted, fontSize: 13, marginTop: 4 },
   coverageStrip: { gap: 10, paddingHorizontal: 20, paddingBottom: 18 },
   coverageDayCard: {
-    width: 104, minHeight: 104, borderRadius: 18, backgroundColor: appTheme.surface,
-    borderColor: appTheme.border, borderWidth: 1, padding: 12, justifyContent: "space-between",
+    width: 104, minHeight: 104, borderRadius: 18, backgroundColor: theme.surface,
+    borderColor: theme.border, borderWidth: 1, padding: 12, justifyContent: "space-between",
   },
-  coverageDayCardActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
-  coverageDow: { color: appTheme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
-  coverageNum: { color: appTheme.text, fontSize: 24, fontWeight: "900" },
+  coverageDayCardActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+  coverageDow: { color: theme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  coverageNum: { color: theme.text, fontSize: 24, fontWeight: "900" },
   coverageCounts: { gap: 2 },
-  coverageCountText: { color: appTheme.text, fontSize: 10, fontWeight: "900" },
-  dayTitle: { color: appTheme.text, fontSize: 18, fontWeight: "900", marginBottom: 10 },
+  coverageCountText: { color: theme.text, fontSize: 10, fontWeight: "900" },
+  dayTitle: { color: theme.text, fontSize: 18, fontWeight: "900", marginBottom: 10 },
   sheetScroll: {
-    marginBottom: 18, borderColor: appTheme.border, borderWidth: 1, borderRadius: 22,
-    backgroundColor: appTheme.surface, overflow: "hidden",
+    marginBottom: 18, borderColor: theme.border, borderWidth: 1, borderRadius: 22,
+    backgroundColor: theme.surface, overflow: "hidden",
   },
-  sheetHeaderRow: { flexDirection: "row", backgroundColor: appTheme.surfaceSoft },
+  sheetHeaderRow: { flexDirection: "row", backgroundColor: theme.surfaceSoft },
   sheetNameHeader: {
     width: 200, minHeight: 64, paddingHorizontal: 20, justifyContent: "center",
-    borderRightColor: appTheme.border, borderRightWidth: 1,
+    borderRightColor: theme.border, borderRightWidth: 1,
   },
-  sheetHeaderText: { color: appTheme.muted, fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  sheetHeaderText: { color: theme.muted, fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
   sheetDayHeader: {
     width: 86, minHeight: 64, alignItems: "center", justifyContent: "center",
-    borderRightColor: appTheme.border, borderRightWidth: 1,
+    borderRightColor: theme.border, borderRightWidth: 1,
   },
-  sheetDayHeaderActive: { backgroundColor: appTheme.purpleSoft },
-  sheetDow: { color: appTheme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
-  sheetDayNum: { color: appTheme.text, fontSize: 14, fontWeight: "900", marginTop: 3 },
-  sheetRow: { flexDirection: "row", borderTopColor: appTheme.border, borderTopWidth: 1 },
+  sheetDayHeaderActive: { backgroundColor: theme.purpleSoft },
+  sheetDow: { color: theme.muted, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  sheetDayNum: { color: theme.text, fontSize: 14, fontWeight: "900", marginTop: 3 },
+  sheetRow: { flexDirection: "row", borderTopColor: theme.border, borderTopWidth: 1 },
   sheetNameCell: {
     width: 200, minHeight: 68, flexDirection: "row", alignItems: "center", gap: 10,
-    paddingHorizontal: 20, borderRightColor: appTheme.border, borderRightWidth: 1,
+    paddingHorizontal: 20, borderRightColor: theme.border, borderRightWidth: 1,
   },
   sheetAvatar: {
-    width: 42, height: 42, borderRadius: 21, backgroundColor: appTheme.primary,
-    borderColor: appTheme.border, borderWidth: 1, alignItems: "center", justifyContent: "center",
+    width: 42, height: 42, borderRadius: 21, backgroundColor: theme.primary,
+    borderColor: theme.border, borderWidth: 1, alignItems: "center", justifyContent: "center",
   },
   sheetAvatarText: { color: "#fff", fontSize: 13, fontWeight: "900" },
-  sheetName: { color: appTheme.text, fontSize: 14, fontWeight: "900" },
-  sheetMeta: { color: appTheme.muted, fontSize: 11, fontWeight: "700", marginTop: 2 },
+  sheetName: { color: theme.text, fontSize: 14, fontWeight: "900" },
+  sheetMeta: { color: theme.muted, fontSize: 11, fontWeight: "700", marginTop: 2 },
   sheetShiftCell: {
     width: 86, minHeight: 68, padding: 6, justifyContent: "center", alignItems: "center",
     borderRightWidth: 1, borderLeftWidth: 0, borderTopWidth: 0, borderBottomWidth: 0,
   },
   emptyShiftCell: { borderStyle: "dashed" },
   sheetShiftText: { fontSize: 12, fontWeight: "900", letterSpacing: 0.2, textAlign: "center" },
-  sheetTimeText: { color: appTheme.muted, fontSize: 8, fontWeight: "800", marginTop: 4, textAlign: "center" },
+  sheetTimeText: { color: theme.muted, fontSize: 8, fontWeight: "800", marginTop: 4, textAlign: "center" },
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  summaryChip: { paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 10, backgroundColor: appTheme.surface },
+  summaryChip: { paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 10, backgroundColor: theme.surface },
   summaryChipText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.4 },
   entryCard: {
     flexDirection: "row", alignItems: "center", padding: 14, marginBottom: 10,
-    backgroundColor: appTheme.surface, borderColor: appTheme.border, borderWidth: 1, borderLeftWidth: 4, borderRadius: 16,
+    backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, borderLeftWidth: 4, borderRadius: 16,
   },
   entryAvatar: {
     width: 42, height: 42, borderRadius: 21, marginRight: 10,
-    backgroundColor: appTheme.primary, borderColor: appTheme.border, borderWidth: 1,
+    backgroundColor: theme.primary, borderColor: theme.border, borderWidth: 1,
     alignItems: "center", justifyContent: "center",
   },
   entryAvatarText: { color: "#fff", fontSize: 12, fontWeight: "900" },
-  entryName: { color: appTheme.text, fontWeight: "900", fontSize: 15 },
+  entryName: { color: theme.text, fontWeight: "900", fontSize: 15 },
   entryShift: { fontSize: 12, fontWeight: "800", marginTop: 2, letterSpacing: 0.4 },
-  entryTime: { color: appTheme.muted, fontSize: 12, marginTop: 4 },
+  entryTime: { color: theme.muted, fontSize: 12, marginTop: 4 },
   entryIcon: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   empty: { alignItems: "center", padding: 40, gap: 12 },
-  emptyText: { color: appTheme.muted, fontSize: 13, textAlign: "center" },
+  emptyText: { color: theme.muted, fontSize: 13, textAlign: "center" },
   editDayBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: appTheme.primary, height: 42, borderRadius: 12, marginBottom: 12,
+    backgroundColor: theme.primary, height: 42, borderRadius: 12, marginBottom: 12,
   },
   editDayText: { color: "#fff", fontWeight: "900", letterSpacing: 0.8, fontSize: 12 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(30,18,91,0.62)", justifyContent: "center", alignItems: "center", padding: 20 },
   bulkModal: {
-    width: "100%", maxWidth: 600, maxHeight: "88%", backgroundColor: appTheme.surface,
+    width: "100%", maxWidth: 600, maxHeight: "88%", backgroundColor: theme.surface,
     borderRadius: 28, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.22,
     shadowRadius: 30, shadowOffset: { width: 0, height: 18 }, elevation: 8,
   },
   bulkHeader: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    padding: 28, borderBottomColor: appTheme.border, borderBottomWidth: 1,
+    padding: 28, borderBottomColor: theme.border, borderBottomWidth: 1,
   },
-  bulkTitle: { color: appTheme.text, fontSize: 22, fontWeight: "900" },
-  bulkSub: { color: appTheme.muted, fontSize: 14, marginTop: 4 },
-  closeBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center" },
+  bulkTitle: { color: theme.text, fontSize: 22, fontWeight: "900" },
+  bulkSub: { color: theme.muted, fontSize: 14, marginTop: 4 },
+  closeBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.surfaceSoft, alignItems: "center", justifyContent: "center" },
   bulkLabel: { color: "#6F7484", fontSize: 12, fontWeight: "900", letterSpacing: 0.8, marginHorizontal: 28, marginTop: 22, marginBottom: 10 },
   bulkHelperBox: {
     marginHorizontal: 28, marginBottom: 10, padding: 12, borderRadius: 14,
-    backgroundColor: appTheme.surfaceSoft, borderColor: appTheme.border, borderWidth: 1,
+    backgroundColor: theme.surfaceSoft, borderColor: theme.border, borderWidth: 1,
   },
-  bulkHelperTitle: { color: appTheme.text, fontSize: 12, fontWeight: "900" },
-  bulkHelperText: { color: appTheme.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
-  employeePicker: { marginHorizontal: 28, maxHeight: 190, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14 },
+  bulkHelperTitle: { color: theme.text, fontSize: 12, fontWeight: "900" },
+  bulkHelperText: { color: theme.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  employeePicker: { marginHorizontal: 28, maxHeight: 190, borderColor: theme.border, borderWidth: 1, borderRadius: 14 },
   quickSelectRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 28, marginBottom: 10 },
   quickSelectBtn: {
-    minHeight: 34, paddingHorizontal: 10, borderRadius: 10, borderColor: appTheme.border,
-    borderWidth: 1, backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center",
+    minHeight: 34, paddingHorizontal: 10, borderRadius: 10, borderColor: theme.border,
+    borderWidth: 1, backgroundColor: theme.surfaceSoft, alignItems: "center", justifyContent: "center",
   },
-  quickSelectText: { color: appTheme.text, fontSize: 11, fontWeight: "900" },
-  employeePickRow: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderBottomColor: appTheme.border, borderBottomWidth: 1 },
-  employeePickRowActive: { backgroundColor: appTheme.purpleSoft },
-  bulkAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
+  quickSelectText: { color: theme.text, fontSize: 11, fontWeight: "900" },
+  employeePickRow: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderBottomColor: theme.border, borderBottomWidth: 1 },
+  employeePickRowActive: { backgroundColor: theme.purpleSoft },
+  bulkAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.primary, alignItems: "center", justifyContent: "center" },
   bulkAvatarText: { color: "#fff", fontWeight: "900" },
-  employeePickName: { color: appTheme.text, fontSize: 15, fontWeight: "800" },
-  employeePickMeta: { color: appTheme.muted, fontSize: 12, marginTop: 2 },
+  employeePickName: { color: theme.text, fontSize: 15, fontWeight: "800" },
+  employeePickMeta: { color: theme.muted, fontSize: 12, marginTop: 2 },
   bulkDateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 28, marginBottom: 6 },
   bulkDateChip: {
-    width: 56, minHeight: 54, borderRadius: 14, borderColor: appTheme.border, borderWidth: 1,
-    backgroundColor: appTheme.surfaceSoft, alignItems: "center", justifyContent: "center",
+    width: 56, minHeight: 54, borderRadius: 14, borderColor: theme.border, borderWidth: 1,
+    backgroundColor: theme.surfaceSoft, alignItems: "center", justifyContent: "center",
   },
-  bulkDateChipActive: { backgroundColor: appTheme.primary, borderColor: appTheme.primary },
+  bulkDateChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
   bulkDateChipWeekend: { borderStyle: "dashed" },
-  bulkDateDow: { color: appTheme.muted, fontSize: 9, fontWeight: "900", letterSpacing: 0.7 },
-  bulkDateNum: { color: appTheme.text, fontSize: 16, fontWeight: "900", marginTop: 2 },
+  bulkDateDow: { color: theme.muted, fontSize: 9, fontWeight: "900", letterSpacing: 0.7 },
+  bulkDateNum: { color: theme.text, fontSize: 16, fontWeight: "900", marginTop: 2 },
   shiftPickGrid: { marginHorizontal: 28, gap: 8 },
   shiftPick: {
-    minHeight: 54, borderColor: appTheme.border, borderWidth: 1, borderRadius: 14,
+    minHeight: 54, borderColor: theme.border, borderWidth: 1, borderRadius: 14,
     paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10,
   },
   shiftDot: { width: 10, height: 10, borderRadius: 5 },
-  shiftPickLabel: { color: appTheme.text, fontSize: 14, fontWeight: "900" },
-  shiftPickTime: { color: appTheme.muted, fontSize: 12, marginTop: 2 },
+  shiftPickLabel: { color: theme.text, fontSize: 14, fontWeight: "900" },
+  shiftPickTime: { color: theme.muted, fontSize: 12, marginTop: 2 },
   bulkActions: { flexDirection: "row", gap: 12, padding: 28 },
-  cancelBtn: { flex: 1, height: 48, borderRadius: 14, borderColor: appTheme.border, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  cancelBtnText: { color: appTheme.text, fontWeight: "900" },
-  applyBtn: { flex: 1, height: 48, borderRadius: 14, backgroundColor: appTheme.primary, alignItems: "center", justifyContent: "center" },
+  cancelBtn: { flex: 1, height: 48, borderRadius: 14, borderColor: theme.border, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  cancelBtnText: { color: theme.text, fontWeight: "900" },
+  applyBtn: { flex: 1, height: 48, borderRadius: 14, backgroundColor: theme.primary, alignItems: "center", justifyContent: "center" },
   applyBtnText: { color: "#fff", fontWeight: "900" },
+  inlineShiftBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: theme.surfaceSoft,
+    gap: 4
+  },
+  inlineShiftText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: theme.primary
+  },
+  defaultShiftCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 28,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  defaultShiftCheckboxText: {
+    color: theme.text,
+    fontSize: 13,
+    fontWeight: "700",
+  }
 });
