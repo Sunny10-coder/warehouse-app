@@ -68,6 +68,11 @@ export default function Schedule() {
   const [bulkShift, setBulkShift] = useState("morning");
   const [savingBulk, setSavingBulk] = useState(false);
   const [alsoUpdateDefaultShift, setAlsoUpdateDefaultShift] = useState(false);
+  const [inlineEditUser, setInlineEditUser] = useState<any>(null);
+  const [editDefaultShift, setEditDefaultShift] = useState("morning");
+  const [editTeam, setEditTeam] = useState("");
+  const [editLocation, setEditLocation] = useState("warehouse");
+  const [savingInline, setSavingInline] = useState(false);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: rangeLength }, (_, i) => {
@@ -242,26 +247,30 @@ export default function Schedule() {
     setBulkOpen(true);
   };
 
-  const openInlineDefaultShiftPicker = (targetUser: any) => {
-    Alert.alert(
-      `Set Default Shift`,
-      `Choose default shift for ${targetUser.full_name}:`,
-      [
-        { text: "Cancel", style: "cancel" },
-        ...DEFAULT_SHIFT_OPTIONS.map(s => ({
-          text: shiftLabel[s] || s,
-          onPress: async () => {
-            try {
-              await api.patch(`/users/${targetUser.id}`, { default_shift: s });
-              Alert.alert("Success", `Default shift for ${targetUser.full_name} updated to ${shiftLabel[s] || s}.`);
-              await load();
-            } catch (err) {
-              Alert.alert("Error", errMsg(err));
-            }
-          }
-        }))
-      ]
-    );
+  const openInlineEdit = (targetUser: any) => {
+    setInlineEditUser(targetUser);
+    setEditDefaultShift(targetUser.default_shift || "morning");
+    setEditTeam(targetUser.team || "");
+    setEditLocation(targetUser.location || "warehouse");
+  };
+
+  const saveInlineConfig = async () => {
+    if (!inlineEditUser) return;
+    setSavingInline(true);
+    try {
+      await api.patch(`/users/${inlineEditUser.id}`, {
+        default_shift: editDefaultShift,
+        team: editTeam || null,
+        location: editLocation,
+      });
+      setInlineEditUser(null);
+      Alert.alert("Success", `Updated settings for ${inlineEditUser.full_name}.`);
+      await load();
+    } catch (err) {
+      Alert.alert("Error", errMsg(err));
+    } finally {
+      setSavingInline(false);
+    }
   };
 
   const saveBulkAssign = async () => {
@@ -664,12 +673,12 @@ export default function Schedule() {
                         </View>
                         <TouchableOpacity
                           style={styles.inlineShiftBtn}
-                          onPress={() => openInlineDefaultShiftPicker(u)}
+                          onPress={() => openInlineEdit(u)}
                         >
                           <Text style={styles.inlineShiftText}>
                             {shiftLabel[u.default_shift || ""] || "Set Default"}
                           </Text>
-                          <Ionicons name="chevron-down" size={12} color={theme.muted} />
+                          <Ionicons name="settings-outline" size={12} color={theme.muted} />
                         </TouchableOpacity>
                       </TouchableOpacity>
                     );
@@ -766,6 +775,104 @@ export default function Schedule() {
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.applyBtn, savingBulk && { opacity: 0.65 }]} onPress={saveBulkAssign} disabled={savingBulk}>
                   <Text style={styles.applyBtnText}>{savingBulk ? "Saving..." : "Apply"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {isAdmin && inlineEditUser && (
+        <Modal
+          visible={!!inlineEditUser}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setInlineEditUser(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.inlineEditModal}>
+              <View style={styles.bulkHeader}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.bulkTitle} numberOfLines={1}>Configure Staff</Text>
+                  <Text style={styles.bulkSub} numberOfLines={1}>{inlineEditUser.full_name}</Text>
+                </View>
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setInlineEditUser(null)}>
+                  <Ionicons name="close" size={20} color={theme.muted} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} nestedScrollEnabled>
+                <Text style={styles.bulkLabel}>DEFAULT SHIFT *</Text>
+                <View style={styles.inlineOptGrid}>
+                  {DEFAULT_SHIFT_OPTIONS.map(s => {
+                    const active = editDefaultShift === s;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        testID={`inline-shift-${s}`}
+                        style={[styles.inlineOptChip, active && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                        onPress={() => setEditDefaultShift(s)}
+                      >
+                        <Text style={[styles.inlineOptChipText, active && { color: "#fff" }]}>
+                          {shiftLabel[s] || s}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.bulkLabel}>TEAM</Text>
+                <View style={styles.inlineOptGrid}>
+                  {[
+                    { key: "A", label: "Team A" },
+                    { key: "B", label: "Team B" },
+                    { key: "", label: "None" },
+                  ].map(t => {
+                    const active = editTeam === t.key;
+                    return (
+                      <TouchableOpacity
+                        key={t.key || "none"}
+                        testID={`inline-team-${t.key || "none"}`}
+                        style={[styles.inlineOptChip, active && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                        onPress={() => setEditTeam(t.key)}
+                      >
+                        <Text style={[styles.inlineOptChipText, active && { color: "#fff" }]}>
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.bulkLabel}>LOCATION *</Text>
+                <View style={styles.inlineOptGrid}>
+                  {[
+                    { key: "warehouse", label: "Warehouse" },
+                    { key: "ega", label: "EGA" },
+                  ].map(l => {
+                    const active = editLocation === l.key;
+                    return (
+                      <TouchableOpacity
+                        key={l.key}
+                        testID={`inline-location-${l.key}`}
+                        style={[styles.inlineOptChip, active && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                        onPress={() => setEditLocation(l.key)}
+                      >
+                        <Text style={[styles.inlineOptChipText, active && { color: "#fff" }]}>
+                          {l.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              <View style={styles.bulkActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setInlineEditUser(null)}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.applyBtn, savingInline && { opacity: 0.65 }]} onPress={saveInlineConfig} disabled={savingInline}>
+                  <Text style={styles.applyBtnText}>{savingInline ? "Saving..." : "Save"}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1062,5 +1169,40 @@ const getStyles = (theme: any) => StyleSheet.create({
     color: theme.text,
     fontSize: 13,
     fontWeight: "700",
+  },
+  inlineEditModal: {
+    width: "100%",
+    maxWidth: 500,
+    maxHeight: "75%",
+    backgroundColor: theme.surface,
+    borderRadius: 28,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 8,
+  },
+  inlineOptGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginHorizontal: 28,
+    marginBottom: 6,
+  },
+  inlineOptChip: {
+    minHeight: 38,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderColor: theme.border,
+    borderWidth: 1,
+    backgroundColor: theme.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inlineOptChipText: {
+    color: theme.text,
+    fontSize: 12,
+    fontWeight: "900",
   }
 });
