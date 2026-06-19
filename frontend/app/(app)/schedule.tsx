@@ -283,31 +283,25 @@ export default function Schedule() {
       Alert.alert("Select employees", "Choose at least one employee.");
       return;
     }
-    if (!selectedDates.length && !alsoUpdateDefaultShift) {
-      Alert.alert("Select days", "Choose at least one date to update, or check 'Also save as Default Shift'.");
+    if (!selectedDates.length) {
+      Alert.alert("Select days", "Choose at least one date to update.");
       return;
     }
     setSavingBulk(true);
     try {
-      const chosenShift = assignShifts.find(s => s.key === bulkShift);
-      const shiftToSave = chosenShift?.saveAs || bulkShift;
-      
       const promises: Promise<any>[] = [];
-      
-      if (alsoUpdateDefaultShift) {
-        selectedUsers.forEach(userId => {
-          promises.push(api.patch(`/users/${userId}`, { default_shift: shiftToSave }));
-        });
-      }
       
       if (selectedDates.length) {
         selectedUsers.forEach(userId => {
+          const userObj = users.find((u: any) => u.id === userId);
+          const shiftToSave = userObj?.default_shift || "morning";
+          
           selectedDates.forEach(shift_date => {
             promises.push(api.post("/schedules", {
               user_id: userId,
               shift_date,
               shift_type: shiftToSave,
-              notes: chosenShift?.notes,
+              notes: "Assigned default shift",
             }));
           });
         });
@@ -315,7 +309,7 @@ export default function Schedule() {
 
       await Promise.all(promises);
       setBulkOpen(false);
-      Alert.alert("Success", "Schedule/default shifts updated successfully.");
+      Alert.alert("Success", "Schedules assigned successfully.");
       await load();
     } catch (e) {
       Alert.alert("Could not assign", errMsg(e));
@@ -737,41 +731,7 @@ export default function Schedule() {
                   })}
                 </View>
 
-                <Text style={styles.bulkLabel}>SELECT SHIFT *</Text>
-                <View style={styles.bulkHelperBox}>
-                  <Text style={styles.bulkHelperTitle}>Shift to apply</Text>
-                  <Text style={styles.bulkHelperText}>This overwrites the selected employee/date schedule cells only.</Text>
-                </View>
-                <View style={styles.shiftPickGrid}>
-                  {assignShifts.map(s => {
-                    const selected = bulkShift === s.key;
-                    return (
-                      <TouchableOpacity
-                        key={s.key}
-                        style={[styles.shiftPick, selected && { borderColor: s.color, backgroundColor: `${s.color}18` }]}
-                        onPress={() => setBulkShift(s.key)}
-                      >
-                        <View style={[styles.shiftDot, { backgroundColor: s.color }]} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.shiftPickLabel, selected && { color: s.color }]}>{s.label}</Text>
-                          <Text style={styles.shiftPickTime}>{s.time}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
 
-                <TouchableOpacity
-                  style={styles.defaultShiftCheckboxRow}
-                  onPress={() => setAlsoUpdateDefaultShift(prev => !prev)}
-                >
-                  <Ionicons
-                    name={alsoUpdateDefaultShift ? "checkbox" : "square-outline"}
-                    size={22}
-                    color={alsoUpdateDefaultShift ? theme.primary : theme.muted}
-                  />
-                  <Text style={styles.defaultShiftCheckboxText}>Also save as Default Shift for selected employees</Text>
-                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.bulkActions}>
