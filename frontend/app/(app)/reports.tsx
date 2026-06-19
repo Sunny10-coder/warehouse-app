@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert,
+  RefreshControl, Modal, TextInput, Alert, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
@@ -62,6 +62,19 @@ export default function Reports() {
   const [exportEnd, setExportEnd] = useState(initialBounds.end);
   const [exporting, setExporting] = useState(false);
 
+  // Admin attendance editing states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editRecord, setEditRecord] = useState<any>(null);
+  const [editUserId, setEditUserId] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editStatus, setEditStatus] = useState("present");
+  const [editClockIn, setEditClockIn] = useState("");
+  const [editClockOut, setEditClockOut] = useState("");
+  const [editHours, setEditHours] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [savingAttendance, setSavingAttendance] = useState(false);
+  const [deletingAttendance, setDeletingAttendance] = useState(false);
+
   useEffect(() => {
     const { start, end } = monthBounds(year, month);
     setExportStart(start);
@@ -105,6 +118,98 @@ export default function Reports() {
   };
   const nextMonth = () => {
     if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1);
+  };
+
+  const openEditAttendanceModal = (record?: any) => {
+    if (!isAdmin) return;
+    if (record) {
+      setEditRecord(record);
+      setEditUserId(record.user_id);
+      setEditDate(record.attendance_date);
+      setEditStatus(record.status || "present");
+      setEditClockIn(record.clock_in || "");
+      setEditClockOut(record.clock_out || "");
+      setEditHours(record.hours_worked !== undefined && record.hours_worked !== null ? String(record.hours_worked) : "");
+      setEditNotes(record.notes || "");
+    } else {
+      setEditRecord(null);
+      setEditUserId(reportMode === "employee" ? targetId : (users[0]?.id || ""));
+      setEditDate(new Date().toISOString().slice(0, 10));
+      setEditStatus("present");
+      setEditClockIn("");
+      setEditClockOut("");
+      setEditHours("");
+      setEditNotes("");
+    }
+    setShowEditModal(true);
+  };
+
+  const saveAttendance = async () => {
+    if (!editUserId) {
+      Alert.alert("Required", "Please select an employee.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editDate.trim())) {
+      Alert.alert("Invalid date", "Use YYYY-MM-DD for the attendance date.");
+      return;
+    }
+    if (editClockIn.trim() && !/^([01]\d|2[0-3]):[0-5]\d$/.test(editClockIn.trim())) {
+      Alert.alert("Invalid Clock In", "Use 24-hour HH:MM format.");
+      return;
+    }
+    if (editClockOut.trim() && !/^([01]\d|2[0-3]):[0-5]\d$/.test(editClockOut.trim())) {
+      Alert.alert("Invalid Clock Out", "Use 24-hour HH:MM format.");
+      return;
+    }
+
+    setSavingAttendance(true);
+    try {
+      const payload: any = {
+        user_id: editUserId,
+        attendance_date: editDate.trim(),
+        status: editStatus,
+        clock_in: editClockIn.trim() || null,
+        clock_out: editClockOut.trim() || null,
+        hours_worked: editHours.trim() ? parseFloat(editHours.trim()) : null,
+        notes: editNotes.trim() || null,
+      };
+      await api.post("/attendance", payload);
+      setShowEditModal(false);
+      Alert.alert("Success", "Attendance record saved.");
+      await load();
+    } catch (e) {
+      Alert.alert("Error", errMsg(e));
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
+
+  const deleteAttendanceRecord = async () => {
+    if (!editRecord) return;
+    const runDelete = async () => {
+      setDeletingAttendance(true);
+      try {
+        await api.delete(`/attendance/${editUserId}/${editDate.trim()}`);
+        setShowEditModal(false);
+        Alert.alert("Deleted", "Attendance record deleted.");
+        await load();
+      } catch (e) {
+        Alert.alert("Error", errMsg(e));
+      } finally {
+        setDeletingAttendance(false);
+      }
+    };
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm("Delete this attendance record?")) {
+        runDelete();
+      }
+      return;
+    }
+    Alert.alert("Delete attendance", "Are you sure you want to delete this record?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: runDelete },
+    ]);
   };
 
   const exportExcel = async () => {
@@ -167,11 +272,11 @@ export default function Reports() {
         Alert.alert("Web export only", "Open this reports page in browser to download Excel.");
         return;
       }
-      const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const blob = new Blob([html], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `warehouse-attendance-${exportStart}-to-${exportEnd}.xls`;
+      link.download = `warehouse-attendance-${exportStart}-to-${exportEnd}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -289,6 +394,17 @@ export default function Reports() {
                 <BigStat label="Half Days" value={`${allReport.totals.half_days}`} color={colors.night} icon="contrast" />
               </View>
 
+              {isAdmin && (
+                <TouchableOpacity
+                  testID="reports-add-attendance"
+                  style={styles.addManualBtn}
+                  onPress={() => openEditAttendanceModal()}
+                >
+                  <Ionicons name="add" size={16} color={colors.bg} />
+                  <Text style={styles.addManualText}>ADD MANUAL ATTENDANCE</Text>
+                </TouchableOpacity>
+              )}
+
               {allReport.users.length > 0 && (
                 <>
                   <Text style={styles.sectionLabel}>STAFF SUMMARY ({allReport.users.length})</Text>
@@ -310,7 +426,13 @@ export default function Reports() {
                 <>
                   <Text style={styles.sectionLabel}>ATTENDANCE LOG ({allReport.records.length})</Text>
                   {allReport.records.slice().reverse().map((a: any, i: number) => (
-                    <View key={`${a.user_id}-${a.attendance_date}-${i}`} style={styles.attRow}>
+                    <TouchableOpacity
+                      key={`${a.user_id}-${a.attendance_date}-${i}`}
+                      style={styles.attRow}
+                      onPress={() => openEditAttendanceModal(a)}
+                      disabled={!isAdmin}
+                      testID={`reports-all-att-row-${i}`}
+                    >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.attDate}>{a.attendance_date} · {a.user_name}</Text>
                         {(a.clock_in || a.clock_out) && (
@@ -325,7 +447,7 @@ export default function Reports() {
                         {a.status.toUpperCase()}
                       </Text>
                       <Text style={styles.attHours}>{a.hours_worked}h</Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </>
               ) : (
@@ -350,6 +472,17 @@ export default function Reports() {
               <BigStat label="Absent" value={`${report.attendance.absent_days}`} color={colors.danger} icon="close-circle" />
               <BigStat label="Half Days" value={`${report.attendance.half_days}`} color={colors.night} icon="contrast" />
             </View>
+
+            {isAdmin && (
+              <TouchableOpacity
+                testID="reports-add-attendance-emp"
+                style={styles.addManualBtn}
+                onPress={() => openEditAttendanceModal()}
+              >
+                <Ionicons name="add" size={16} color={colors.bg} />
+                <Text style={styles.addManualText}>ADD MANUAL ATTENDANCE</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Leaves */}
             <Text style={styles.sectionLabel}>LEAVE BALANCE & USAGE ({monthName})</Text>
@@ -398,7 +531,13 @@ export default function Reports() {
               <>
                 <Text style={styles.sectionLabel}>ATTENDANCE LOG ({report.attendance.records.length})</Text>
                 {report.attendance.records.slice().reverse().map((a: any, i: number) => (
-                  <View key={i} style={styles.attRow}>
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.attRow}
+                    onPress={() => openEditAttendanceModal(a)}
+                    disabled={!isAdmin}
+                    testID={`reports-emp-att-row-${i}`}
+                  >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.attDate}>{a.attendance_date}</Text>
                       {(a.clock_in || a.clock_out) && (
@@ -413,7 +552,7 @@ export default function Reports() {
                       {a.status.toUpperCase()}
                     </Text>
                     <Text style={styles.attHours}>{a.hours_worked}h</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </>
             )}
@@ -478,6 +617,140 @@ export default function Reports() {
           </View>
         </View>
       </Modal>
+
+      {/* Admin Attendance Edit Modal */}
+      {isAdmin && (
+        <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+          <View style={styles.modalBg}>
+            <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editRecord ? "Edit Attendance" : "Add Manual Attendance"}</Text>
+                <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalLabel}>Employee</Text>
+              {editRecord ? (
+                <View style={styles.readOnlyBox}>
+                  <Text style={styles.readOnlyText}>{editRecord.user_name}</Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    {users.map(u => (
+                      <TouchableOpacity
+                        key={u.id}
+                        onPress={() => setEditUserId(u.id)}
+                        style={[styles.userChip, editUserId === u.id && styles.userChipActive]}
+                      >
+                        <Text style={[styles.userChipText, editUserId === u.id && { color: colors.bg }]}>
+                          {u.full_name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+
+              <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editDate}
+                onChangeText={setEditDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                editable={!editRecord}
+              />
+
+              <Text style={styles.modalLabel}>Status</Text>
+              <View style={styles.statusSelectRow}>
+                {["present", "late", "absent", "leave"].map(s => {
+                  const active = editStatus === s;
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() => setEditStatus(s)}
+                      style={[styles.statusSelectBtn, active && { backgroundColor: colors.morning, borderColor: colors.morning }]}
+                    >
+                      <Text style={[styles.statusSelectText, active && { color: colors.bg }]}>
+                        {s.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.modalLabel}>Clock In (HH:MM - 24h)</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editClockIn}
+                onChangeText={setEditClockIn}
+                placeholder="07:00"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={styles.modalLabel}>Clock Out (HH:MM - 24h)</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editClockOut}
+                onChangeText={setEditClockOut}
+                placeholder="16:00"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={styles.modalLabel}>Hours Worked (Leave empty for auto-calculate)</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editHours}
+                onChangeText={setEditHours}
+                placeholder="9.0"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+              />
+
+              <Text style={styles.modalLabel}>Notes</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 60, textAlignVertical: "top" }]}
+                value={editNotes}
+                onChangeText={setEditNotes}
+                placeholder="Add manual notes"
+                placeholderTextColor={colors.textMuted}
+                multiline
+              />
+
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                {editRecord && (
+                  <TouchableOpacity
+                    style={[styles.deleteBtn, { flex: 1 }]}
+                    onPress={deleteAttendanceRecord}
+                    disabled={deletingAttendance}
+                  >
+                    {deletingAttendance ? <ActivityIndicator color={colors.bg} /> : (
+                      <>
+                        <Ionicons name="trash" size={16} color={colors.bg} />
+                        <Text style={styles.grantBtnText}>DELETE</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.saveBtn, { flex: editRecord ? 2 : 1 }]}
+                  onPress={saveAttendance}
+                  disabled={savingAttendance}
+                >
+                  {savingAttendance ? <ActivityIndicator color={colors.bg} /> : (
+                    <>
+                      <Ionicons name="save" size={16} color={colors.bg} />
+                      <Text style={styles.grantBtnText}>SAVE RECORD</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -603,4 +876,37 @@ const styles = StyleSheet.create({
   },
   userPickName: { color: colors.textPrimary, fontSize: 14, fontWeight: "700" },
   userPickMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  addManualBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: colors.morning, height: 42, borderRadius: 6, marginTop: 12, marginBottom: 12,
+  },
+  addManualText: { color: colors.bg, fontWeight: "900", letterSpacing: 0.8, fontSize: 12 },
+  readOnlyBox: {
+    height: 48, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
+    borderRadius: 4, justifyContent: "center", paddingHorizontal: 14, marginBottom: 8,
+  },
+  readOnlyText: { color: colors.textSecondary, fontSize: 15, fontWeight: "600" },
+  userChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    backgroundColor: colors.surfaceHi,
+  },
+  userChipActive: { backgroundColor: colors.morning, borderColor: colors.morning },
+  userChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: "700" },
+  statusSelectRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  statusSelectBtn: {
+    flex: 1, height: 38, borderColor: colors.border, borderWidth: 1, borderRadius: 4,
+    alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceHi,
+  },
+  statusSelectText: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  modalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 6, marginTop: 10 },
+  modalInput: { height: 48, backgroundColor: colors.surfaceHi, borderColor: colors.border, borderWidth: 1, borderRadius: 4, color: colors.textPrimary, paddingHorizontal: 14, marginBottom: 8, fontSize: 15 },
+  saveBtn: {
+    height: 48, backgroundColor: colors.morning, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 8, borderRadius: 4,
+  },
+  deleteBtn: {
+    height: 48, backgroundColor: colors.danger, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 8, borderRadius: 4,
+  },
+  grantBtnText: { color: colors.bg, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
 });

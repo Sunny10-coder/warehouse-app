@@ -706,6 +706,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   const [vacationEnd, setVacationEnd] = useState(localDateString());
   const [vacationReason, setVacationReason] = useState("Annual vacation assigned by admin");
   const [assigningVacation, setAssigningVacation] = useState(false);
+  const [vacationType, setVacationType] = useState("annual");
 
   useEffect(() => {
     if (!user) return;
@@ -726,6 +727,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     setVacationStart(localDateString());
     setVacationEnd(localDateString());
     setVacationReason("Annual vacation assigned by admin");
+    setVacationType("annual");
   }, [user]);
 
   if (!user) return null;
@@ -815,11 +817,11 @@ function UserEditModal({ user, onClose, onSaved }: any) {
 
   const assignVacation = async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(vacationStart.trim()) || !/^\d{4}-\d{2}-\d{2}$/.test(vacationEnd.trim())) {
-      Alert.alert("Invalid dates", "Use YYYY-MM-DD for vacation start and end.");
+      Alert.alert("Invalid dates", "Use YYYY-MM-DD for leave start and end.");
       return;
     }
     if (!vacationReason.trim()) {
-      Alert.alert("Required", "Enter why this vacation is being assigned.");
+      Alert.alert("Required", "Enter why this leave is being assigned.");
       return;
     }
     setAssigningVacation(true);
@@ -828,10 +830,18 @@ function UserEditModal({ user, onClose, onSaved }: any) {
         start_date: vacationStart.trim(),
         end_date: vacationEnd.trim(),
         reason: vacationReason.trim(),
+        leave_type: vacationType,
       });
-      const next = Math.max(0, (parseFloat(annual) || 0) - (r.data.days || 0));
-      setAnnual(String(next));
-      Alert.alert("Vacation scheduled", `${r.data.days} vacation day${r.data.days === 1 ? "" : "s"} approved and locked on the schedule.`);
+      const deductedDays = r.data.days || 0;
+      if (vacationType === "annual") {
+        setAnnual(prev => String(Math.max(0, (parseFloat(prev) || 0) - deductedDays)));
+      } else if (vacationType === "sick") {
+        setSick(prev => String(Math.max(0, (parseFloat(prev) || 0) - deductedDays)));
+      } else if (vacationType === "comp_off") {
+        setCompOff(prev => String(Math.max(0, (parseFloat(prev) || 0) - deductedDays)));
+      }
+      onSaved();
+      Alert.alert("Leave scheduled", `${deductedDays} day${deductedDays === 1 ? "" : "s"} of type ${vacationType} approved and locked on the schedule.`);
     } catch (e) {
       Alert.alert("Error", errMsg(e));
     } finally {
@@ -957,10 +967,36 @@ function UserEditModal({ user, onClose, onSaved }: any) {
           <BalanceEditor testID="balance-comp" label="Comp Off" color={colors.compOff} value={compOff} setValue={setCompOff} onAdjust={(d: number) => adjustBalance("comp_off", d)} />
 
           <View style={styles.vacationBox}>
-            <Text style={styles.vacationTitle}>ASSIGN APPROVED VACATION</Text>
+            <Text style={styles.vacationTitle}>ASSIGN APPROVED LEAVE</Text>
             <Text style={styles.vacationHint}>
-              Creates approved vacation leave and locks those dates as Leave on the live schedule calendar.
+              Creates approved leave and locks those dates as Leave on the live schedule calendar.
             </Text>
+            <Text style={[styles.modalLabel, { marginTop: 4, marginBottom: 6 }]}>Leave Type</Text>
+            <View style={[styles.optGrid, { marginBottom: 12 }]}>
+              {[
+                { key: "annual", label: "Vacation" },
+                { key: "sick", label: "Sick" },
+                { key: "comp_off", label: "Comp Off" },
+                { key: "emergency", label: "Emergency" },
+              ].map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  testID={`assign-leave-type-${t.key}`}
+                  onPress={() => {
+                    setVacationType(t.key);
+                    if (t.key === "annual") setVacationReason("Annual vacation assigned by admin");
+                    else if (t.key === "sick") setVacationReason("Sick leave assigned by admin");
+                    else if (t.key === "comp_off") setVacationReason("Comp off assigned by admin");
+                    else if (t.key === "emergency") setVacationReason("Emergency leave assigned by admin");
+                  }}
+                  style={[styles.optChip, vacationType === t.key && styles.optChipActive]}
+                >
+                  <Text style={[styles.optChipText, vacationType === t.key && { color: colors.bg }]}>
+                    {t.label.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <View style={styles.overtimeGrid}>
               <TextInput
                 testID="vacation-start-date"
@@ -997,7 +1033,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
               {assigningVacation ? <ActivityIndicator color={colors.bg} /> : (
                 <>
                   <Ionicons name="airplane" size={16} color={colors.bg} />
-                  <Text style={styles.grantBtnText}>APPROVE & SCHEDULE VACATION</Text>
+                  <Text style={styles.grantBtnText}>APPROVE & SCHEDULE LEAVE</Text>
                 </>
               )}
             </TouchableOpacity>

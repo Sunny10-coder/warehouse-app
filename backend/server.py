@@ -194,6 +194,7 @@ class VacationAssign(BaseModel):
     start_date: str
     end_date: str
     reason: str = "Admin assigned vacation"
+    leave_type: str = "annual"
 
 
 class ScheduleEntry(BaseModel):
@@ -668,14 +669,24 @@ async def assign_approved_vacation(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     days = len(dates)
-    if target.get("annual_leave_balance", 0) < days:
+
+    lt = payload.leave_type or "annual"
+    if lt not in ("annual", "sick", "comp_off", "emergency"):
+        raise HTTPException(status_code=400, detail="Invalid leave type")
+
+    # balance check
+    if lt == "annual" and target.get("annual_leave_balance", 0) < days:
         raise HTTPException(status_code=400, detail="Insufficient vacation balance")
+    elif lt == "sick" and target.get("sick_leave_balance", 0) < days:
+        raise HTTPException(status_code=400, detail="Insufficient sick leave balance")
+    elif lt == "comp_off" and target.get("comp_off_balance", 0) < days:
+        raise HTTPException(status_code=400, detail="Insufficient comp-off balance")
 
     now = datetime.now(timezone.utc)
     leave = LeaveRequest(
         user_id=user_id,
         user_name=target["full_name"],
-        leave_type="annual",
+        leave_type=lt,
         start_date=payload.start_date,
         end_date=payload.end_date,
         days=days,
@@ -687,7 +698,22 @@ async def assign_approved_vacation(
         updated_at=now,
     )
     await db.leaves.insert_one(leave.dict())
-    await db.users.update_one({"_id": user_id}, {"$inc": {"annual_leave_balance": -days}})
+
+    # balance reduction
+    if lt == "annual":
+        await db.users.update_one({"_id": user_id}, {"$inc": {"annual_leave_balance": -days}})
+    elif lt == "sick":
+        await db.users.update_one({"_id": user_id}, {"$inc": {"sick_leave_balance": -days}})
+    elif lt == "comp_off":
+        await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": -days}})
+        await _record_comp_off_usage(db, leave.dict(), days, admin["full_name"])
+    elif lt == "emergency":
+        comp_off_available = max(0, int(target.get("comp_off_balance", 0)))
+        comp_off_deduction = min(comp_off_available, days)
+        if comp_off_deduction:
+            await db.users.update_one({"_id": user_id}, {"$inc": {"comp_off_balance": -comp_off_deduction}})
+            await _record_comp_off_usage(db, leave.dict(), comp_off_deduction, admin["full_name"])
+
     await _apply_approved_leave_to_schedule(db, leave.dict())
     await realtime.broadcast("leaves", "approved", {"leave_id": leave.id, "user_id": user_id})
     await realtime.broadcast(
