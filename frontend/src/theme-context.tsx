@@ -8,26 +8,28 @@ export type ThemeMode = "light" | "classic";
 const THEME_KEY = "warehouse.theme.mode";
 
 export const classicTheme = {
-  bg: colors.bg,
-  surface: colors.surface,
-  surfaceSoft: colors.surfaceHi,
-  surfaceLavender: colors.surfaceHi,
-  border: colors.border,
+  bg: "rgba(0, 0, 0, 0.0)", // Transparent for gradient
+  surface: "rgba(0, 0, 0, 0.4)", // Dark Glass
+  surfaceHi: "rgba(0, 0, 0, 0.5)",
+  surfaceSoft: "rgba(0, 0, 0, 0.25)",
+  surfaceLavender: "rgba(0, 0, 0, 0.5)",
+  border: "rgba(255, 255, 255, 0.15)", // Subtle edge
   text: colors.textPrimary,
-  muted: colors.textSecondary,
-  primary: colors.morning,
+  muted: "rgba(255, 255, 255, 0.6)",
+  primary: "rgba(255, 214, 0, 0.9)", 
   primaryDark: colors.bg,
   primaryDeep: colors.bg,
-  purpleSoft: colors.morningBg,
-  green: colors.success,
-  greenSoft: colors.leaveBg,
-  yellow: colors.warning,
-  yellowSoft: "rgba(255,159,10,0.14)",
-  red: colors.danger,
-  redSoft: "rgba(255,59,48,0.12)",
-  blue: "#0A84FF",
-  blueSoft: "rgba(10,132,255,0.14)",
-  shadow: "rgba(0,0,0,0.34)",
+  purpleSoft: "rgba(255, 214, 0, 0.15)",
+  green: "rgba(52, 199, 89, 0.9)",
+  greenSoft: "rgba(52, 199, 89, 0.15)",
+  yellow: "rgba(255, 159, 10, 0.9)",
+  yellowSoft: "rgba(255, 159, 10, 0.15)",
+  red: "rgba(255, 59, 48, 0.9)",
+  redSoft: "rgba(255, 59, 48, 0.15)",
+  blue: "rgba(10, 132, 255, 0.9)",
+  blueSoft: "rgba(10, 132, 255, 0.15)",
+  shadow: "rgba(0, 0, 0, 0.8)",
+  glassHighlight: "rgba(255, 255, 255, 0.1)", // Top/Left 3D bevel edge
 } as const;
 
 export type AppTheme = Record<keyof typeof appTheme, string>;

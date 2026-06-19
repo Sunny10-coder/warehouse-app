@@ -4,6 +4,7 @@ import {
   RefreshControl, Modal, TextInput, Alert, Platform, Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BlurView } from "expo-blur";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -35,7 +36,7 @@ function mondayString(d = new Date()) {
 
 export default function Admin() {
   const { user: currentUser } = useAuth();
-  const { theme } = useThemeMode();
+  const { theme, isClassic } = useThemeMode();
   const [tab, setTab] = useState<Tab>("leaves");
   const [users, setUsers] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
@@ -209,7 +210,7 @@ export default function Admin() {
             {leaves.length === 0 ? (
               <Empty icon="checkmark-done" text="No pending leave requests" />
             ) : leaves.map(l => (
-              <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border }]} testID={`pending-leave-${l.id}`}>
+              <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]} testID={`pending-leave-${l.id}`}>
                 <View style={styles.cardTop}>
                   <View>
                     <Text style={styles.userName}>{l.user_name}</Text>
@@ -238,7 +239,7 @@ export default function Admin() {
                     <Text style={[styles.btnSmText, { color: colors.bg }]}>APPROVE</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </BlurView>
             ))}
           </>
         )}
@@ -247,9 +248,9 @@ export default function Admin() {
           <>
             {pendingUsers.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Pending Approval ({pendingUsers.length})</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Pending Approval ({pendingUsers.length})</Text>
                 {pendingUsers.map(u => (
-                  <View key={u.id} style={[styles.card, { borderLeftColor: colors.warning, backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={u.id} style={[styles.card, { borderLeftColor: colors.warning, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
                     <View style={styles.cardTop}>
                       <View>
                         <Text style={styles.userName}>{u.full_name}</Text>
@@ -264,13 +265,13 @@ export default function Admin() {
                         <Text style={[styles.btnSmText, { color: colors.bg }]}>APPROVE</Text>
                       </TouchableOpacity>
                     </View>
-                  </View>
+                  </BlurView>
                 ))}
               </>
             )}
 
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>All Staff ({users.filter(u => u.status === "active").length})</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>All Staff ({users.filter(u => u.status === "active").length})</Text>
               <TouchableOpacity
                 testID="admin-add-staff"
                 style={styles.addStaffBtn}
@@ -284,9 +285,10 @@ export default function Admin() {
               <TouchableOpacity
                 key={u.id}
                 testID={`user-row-${u.id}`}
-                style={[styles.userRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                style={{ marginBottom: 8, borderRadius: 6 }}
                 onPress={() => setEditUser(u)}
               >
+                <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.userRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, marginBottom: 0 }]}>
                 {u.avatar_url ? (
                   <Image source={{ uri: u.avatar_url }} style={styles.userAvatar} />
                 ) : (
@@ -320,6 +322,7 @@ export default function Admin() {
                   )}
                   <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </View>
+                </BlurView>
               </TouchableOpacity>
             ))}
           </>
@@ -327,9 +330,9 @@ export default function Admin() {
 
         {tab === "schedule" && (
           <>
-            <View style={[styles.card, { borderLeftColor: colors.danger, backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={styles.sectionTitle}>Fresh Start</Text>
-              <Text style={styles.helper}>
+            <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.card, { borderLeftColor: colors.danger, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Fresh Start</Text>
+              <Text style={[styles.helper, { color: theme.muted }]}>
                 Clears schedules, attendance, and leave requests. Staff logins remain active.
               </Text>
               <TouchableOpacity
@@ -340,13 +343,13 @@ export default function Admin() {
                 <Ionicons name="refresh" size={16} color="#fff" />
                 <Text style={styles.dangerBtnText}>CLEAR OPERATIONAL DATA</Text>
               </TouchableOpacity>
-            </View>
+            </BlurView>
 
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
               <View style={styles.scheduleHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Generate Schedule</Text>
-                  <Text style={styles.helper}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Generate Schedule</Text>
+                  <Text style={[styles.helper, { color: theme.muted }]}>
                     One clean generation updates the live schedule calendar. Approved sick, annual, and comp-off leave automatically replaces shifts with Leave and reduces balances.
                   </Text>
                 </View>
@@ -482,7 +485,7 @@ export default function Admin() {
                   </View>
                 </View>
               )}
-            </View>
+            </BlurView>
           </>
         )}
       </ScrollView>
@@ -525,6 +528,7 @@ function Empty({ icon, text }: any) {
 }
 
 function CreateUserModal({ visible, onClose, onSaved }: any) {
+  const { theme, isClassic } = useThemeMode();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -567,9 +571,10 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalBg}>
-        <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
-          <View style={styles.modalHeader}>
+      <BlurView intensity={20} tint="dark" style={styles.modalBg}>
+        <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+            <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Add Staff Login</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
@@ -680,12 +685,14 @@ function CreateUserModal({ visible, onClose, onSaved }: any) {
               <Text style={styles.submitBtnText}>CREATE ACTIVE LOGIN</Text>}
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </BlurView>
+      </BlurView>
     </Modal>
   );
 }
 
 function UserEditModal({ user, onClose, onSaved }: any) {
+  const { theme, isClassic } = useThemeMode();
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
@@ -851,9 +858,10 @@ function UserEditModal({ user, onClose, onSaved }: any) {
 
   return (
     <Modal visible={!!user} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalBg}>
-        <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
-          <View style={styles.modalHeader}>
+      <BlurView intensity={20} tint="dark" style={styles.modalBg}>
+        <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+            <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{user.full_name}</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
@@ -1103,7 +1111,8 @@ function UserEditModal({ user, onClose, onSaved }: any) {
               <Text style={styles.submitBtnText}>SAVE CHANGES</Text>}
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </BlurView>
+      </BlurView>
     </Modal>
   );
 }
