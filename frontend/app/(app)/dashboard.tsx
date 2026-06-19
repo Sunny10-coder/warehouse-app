@@ -3,7 +3,6 @@ import {
   View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -40,7 +39,7 @@ type DashboardData = {
 export default function Dashboard() {
   const { user, isAdmin } = useAuth();
   const { width } = useWindowDimensions();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const isMobile = width < 760;
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,7 +134,7 @@ export default function Dashboard() {
         </View>
 
         <View style={styles.dashboardGrid}>
-          <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.panel, { borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={styles.panel}>
             <Text style={styles.panelTitle}>Quick Actions</Text>
             <View style={styles.actionGrid}>
               <ActionTile icon="finger-print" label="Clock In" color={appTheme.primary} bg={appTheme.purpleSoft} onPress={() => router.push("/(app)/attendance")} />
@@ -145,9 +144,9 @@ export default function Dashboard() {
               <ActionTile icon="briefcase" label="Leave" color={appTheme.red} bg={appTheme.redSoft} onPress={() => router.push("/(app)/leaves")} />
               <ActionTile icon="pulse" label="Activity" color={appTheme.green} bg="#ECFDF3" onPress={() => router.push("/(app)/command-center")} />
             </View>
-          </BlurView>
+          </View>
 
-          <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.panel, { borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={styles.panel}>
             <View style={styles.panelHeader}>
               <Text style={styles.panelTitle}>Today's Shifts</Text>
               <TouchableOpacity onPress={() => router.push("/(app)/schedule")}>
@@ -157,9 +156,9 @@ export default function Dashboard() {
             <ShiftRow color={appTheme.green} bg={appTheme.greenSoft} label={shiftLabel[today?.shift_type] || "No Shift"} time={today ? `${today.start_time || "--"} - ${today.end_time || "--"}` : "Not scheduled"} value={today ? `${today.hours || 0}h` : "--"} />
             <ShiftRow color={appTheme.yellow} bg={appTheme.yellowSoft} label="Hours This Month" time="Logged attendance" value={`${data?.hours_this_month ?? 0}h`} />
             <ShiftRow color={appTheme.primary} bg={appTheme.purpleSoft} label="Pending Leave" time="Awaiting approval" value={pendingLeaves} />
-          </BlurView>
+          </View>
 
-          <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.panel, { borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={styles.panel}>
             <View style={styles.panelHeader}>
               <Text style={styles.panelTitle}>This Month</Text>
               <TouchableOpacity onPress={() => router.push("/(app)/reports")}>
@@ -176,10 +175,10 @@ export default function Dashboard() {
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${attendanceRate}%` }]} />
             </View>
-          </BlurView>
+          </View>
         </View>
 
-        <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.activityPanel, { borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={styles.activityPanel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelTitle}>Recent Activity</Text>
             <TouchableOpacity onPress={() => router.push("/(app)/reports")}>
@@ -195,14 +194,14 @@ export default function Dashboard() {
             <View style={styles.activityPerson}>
               <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>{String(user?.full_name || "U").slice(0, 1).toUpperCase()}</Text></View>
               <View>
-                <Text style={[styles.activityName, { color: theme.text }]}>{user?.full_name}</Text>
+                <Text style={styles.activityName}>{user?.full_name}</Text>
                 <Text style={styles.activityRole}>{roleLabel[user?.role || "employee"]}</Text>
               </View>
             </View>
             <Text style={styles.presentPill}>Present</Text>
             <Text style={styles.activityDate}>{new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}</Text>
           </View>
-        </BlurView>
+        </View>
 
         <View style={{ height: 42 }} />
       </ScrollView>
@@ -218,54 +217,48 @@ function getGreeting() {
 }
 
 function MetricCard({ icon, color, value, label, sub }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={50} tint={isClassic ? "dark" : "light"} style={[styles.metricCard, { borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+    <View style={[styles.metricCard, { borderColor: `${color}35` }]}>
       <View style={[styles.metricIcon, { backgroundColor: color }]}>
         <Ionicons name={icon} size={22} color="#fff" />
       </View>
-      <Text style={[styles.metricValue, { color: theme.text }]}>{value}</Text>
-      <Text style={[styles.metricLabel, { color: theme.muted }]}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
       <Text style={[styles.metricSub, { color }]}>{sub}</Text>
-    </BlurView>
+    </View>
   );
 }
 
 function ActionTile({ icon, label, color, bg, onPress }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <TouchableOpacity onPress={onPress} style={{ width: "47%" }}>
-      <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.actionTile, { backgroundColor: bg, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-        <Ionicons name={icon} size={24} color={color} />
-        <Text style={[styles.actionLabel, { color }]}>{label}</Text>
-      </BlurView>
+    <TouchableOpacity onPress={onPress} style={[styles.actionTile, { backgroundColor: bg }]}>
+      <Ionicons name={icon} size={24} color={color} />
+      <Text style={[styles.actionLabel, { color }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function ShiftRow({ color, bg, label, time, value }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.shiftRow, { backgroundColor: bg, borderColor: theme.border }]}>
+    <View style={[styles.shiftRow, { backgroundColor: bg }]}>
       <View style={[styles.shiftIcon, { backgroundColor: color }]}>
         <Ionicons name="time-outline" size={19} color="#fff" />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.shiftLabel, { color: theme.text }]}>{label}</Text>
-        <Text style={[styles.shiftTime, { color: theme.muted }]}>{time}</Text>
+        <Text style={styles.shiftLabel}>{label}</Text>
+        <Text style={styles.shiftTime}>{time}</Text>
       </View>
       <Text style={[styles.shiftValue, { color }]}>{value}</Text>
-    </BlurView>
+    </View>
   );
 }
 
 function MiniStat({ value, label, color, bg }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.miniStat, { backgroundColor: bg, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+    <View style={[styles.miniStat, { backgroundColor: bg }]}>
       <Text style={[styles.miniValue, { color }]}>{value}</Text>
-      <Text style={[styles.miniLabel, { color: theme.muted }]}>{label}</Text>
-    </BlurView>
+      <Text style={styles.miniLabel}>{label}</Text>
+    </View>
   );
 }
 

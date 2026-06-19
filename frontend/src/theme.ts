@@ -98,26 +98,24 @@ export const leaveColor = (t: string) => {
 };
 
 export const appTheme = {
-  bg: "rgba(255, 255, 255, 0.0)", // Transparent so gradient shows through
-  surface: "rgba(255, 255, 255, 0.3)", // Glass body
-  surfaceHi: "rgba(255, 255, 255, 0.4)",
-  surfaceSoft: "rgba(255, 255, 255, 0.15)",
-  surfaceLavender: "rgba(255, 255, 255, 0.4)",
-  border: "rgba(255, 255, 255, 0.5)", // Glass edge
+  bg: "#F3F1FF",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F8F7FF",
+  surfaceLavender: "#EEEAFD",
+  border: "#E5E1F6",
   text: "#09052D",
-  muted: "rgba(9, 5, 45, 0.6)",
-  primary: "rgba(116, 97, 242, 0.9)", // Semi-transparent vibrant primary
+  muted: "#9BA0B3",
+  primary: "#7461F2",
   primaryDark: "#28166F",
   primaryDeep: "#1E125B",
-  purpleSoft: "rgba(116, 97, 242, 0.15)",
-  green: "rgba(16, 185, 129, 0.9)",
-  greenSoft: "rgba(16, 185, 129, 0.15)",
-  yellow: "rgba(245, 158, 11, 0.9)",
-  yellowSoft: "rgba(245, 158, 11, 0.15)",
-  red: "rgba(239, 68, 68, 0.9)",
-  redSoft: "rgba(239, 68, 68, 0.15)",
-  blue: "rgba(59, 130, 246, 0.9)",
-  blueSoft: "rgba(59, 130, 246, 0.15)",
-  shadow: "rgba(30, 20, 90, 0.25)",
-  glassHighlight: "rgba(255, 255, 255, 0.8)", // Top/Left 3D bevel edge
+  purpleSoft: "#E8E3FF",
+  green: "#10B981",
+  greenSoft: "#D4F8E6",
+  yellow: "#F59E0B",
+  yellowSoft: "#FFF2BF",
+  red: "#EF4444",
+  redSoft: "#FBE0E1",
+  blue: "#3B82F6",
+  blueSoft: "#DDEBFF",
+  shadow: "rgba(60, 48, 130, 0.16)",
 } as const;

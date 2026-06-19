@@ -4,7 +4,6 @@ import {
   RefreshControl, FlatList, Image, Modal, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect, router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -40,7 +39,7 @@ function fmtDate(d: Date) {
 
 export default function Schedule() {
   const { user, isAdmin } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const styles = useMemo(() => getStyles(theme), [theme]);
 
   const assignShifts = useMemo(() => [
@@ -321,7 +320,7 @@ export default function Schedule() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.text }]}>Schedules</Text>
           <Text style={[styles.rangeLabel, { color: theme.muted }]}>
@@ -334,9 +333,9 @@ export default function Schedule() {
         <TouchableOpacity style={styles.avatarTop} onPress={() => router.push("/(app)/profile")}>
           <Text style={styles.avatarTopText}>{String(user?.full_name || "U").slice(0, 1).toUpperCase()}</Text>
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.toggleRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+      <View style={styles.toggleRow}>
         <TouchableOpacity
           testID="schedule-toggle-mine"
           onPress={() => setViewMode("mine")}
@@ -351,7 +350,7 @@ export default function Schedule() {
         >
           <Text style={[styles.toggleText, viewMode === "team" && styles.toggleTextActive]}>ALL TEAM</Text>
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
       <View style={styles.scheduleIntro}>
         <View>
@@ -402,7 +401,7 @@ export default function Schedule() {
         </View>
       )}
 
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.rosterRange, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+      <View style={styles.rosterRange}>
         <TouchableOpacity
           testID="schedule-prev-week"
           style={styles.navBtn}
@@ -431,7 +430,7 @@ export default function Schedule() {
         >
           <Ionicons name="chevron-forward" size={20} color={theme.primary} />
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.coverageStrip}>
         {weekDays.map((d, i) => {
@@ -570,7 +569,7 @@ export default function Schedule() {
         renderItem={({ item }) => {
           const sc = shiftColor(item.shift_type);
           return (
-            <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.entryCard, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]} testID={`schedule-entry-${item.user_id}`}>
+            <View style={[styles.entryCard, { borderLeftColor: sc.c }]} testID={`schedule-entry-${item.user_id}`}>
               {item.avatar_url ? (
                 <Image source={{ uri: item.avatar_url }} style={styles.entryAvatar} />
               ) : (
@@ -590,7 +589,7 @@ export default function Schedule() {
               <View style={[styles.entryIcon, { backgroundColor: sc.bg, borderColor: sc.c }]}>
                 <Ionicons name={shiftIcon(item.shift_type)} size={22} color={sc.c} />
               </View>
-            </BlurView>
+            </View>
           );
         }}
         ListEmptyComponent={
@@ -608,8 +607,8 @@ export default function Schedule() {
 
       {isAdmin && (
         <Modal visible={bulkOpen} transparent animationType="fade" onRequestClose={() => setBulkOpen(false)}>
-          <BlurView intensity={20} tint="dark" style={styles.modalBackdrop}>
-            <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.bulkModal, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.bulkModal}>
               <View style={styles.bulkHeader}>
                 <View>
                   <Text style={styles.bulkTitle}>Assign Schedule</Text>
@@ -743,8 +742,8 @@ export default function Schedule() {
                   <Text style={styles.applyBtnText}>{savingBulk ? "Saving..." : "Apply"}</Text>
                 </TouchableOpacity>
               </View>
-            </BlurView>
-          </BlurView>
+            </View>
+          </View>
         </Modal>
       )}
 
@@ -755,8 +754,8 @@ export default function Schedule() {
           animationType="fade"
           onRequestClose={() => setInlineEditUser(null)}
         >
-          <BlurView intensity={20} tint="dark" style={styles.modalBackdrop}>
-            <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.inlineEditModal, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.inlineEditModal}>
               <View style={styles.bulkHeader}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.bulkTitle} numberOfLines={1}>Configure Staff</Text>
@@ -841,8 +840,8 @@ export default function Schedule() {
                   <Text style={styles.applyBtnText}>{savingInline ? "Saving..." : "Save"}</Text>
                 </TouchableOpacity>
               </View>
-            </BlurView>
-          </BlurView>
+            </View>
+          </View>
         </Modal>
       )}
     </SafeAreaView>

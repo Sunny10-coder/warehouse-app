@@ -4,7 +4,6 @@ import {
   RefreshControl, Alert, TextInput, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -39,7 +38,7 @@ function validTime(value: string) {
 
 export default function Attendance() {
   const { user } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [todaySched, setTodaySched] = useState<any>(null);
@@ -219,7 +218,7 @@ export default function Attendance() {
         <Text style={styles.title}>Today · {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</Text>
 
         {/* Today card */}
-        <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.todayCard, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight }]}>
+        <View style={[styles.todayCard, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border }]}>
           {todaySched ? (
             <>
               <Text style={[styles.scheduledLabel, { color: sc.c }]}>
@@ -313,23 +312,23 @@ export default function Attendance() {
               <Text style={styles.actionBtnText}>LEAVE</Text>
             </TouchableOpacity>
           </View>
-        </BlurView>
+        </View>
 
         {/* Month stats */}
         <Text style={styles.overline}>THIS MONTH</Text>
         <View style={styles.statsRow}>
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.statBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-            <Text style={[styles.statVal, { color: theme.text }]}>{totalHours.toFixed(1)}h</Text>
-            <Text style={[styles.statLab, { color: theme.muted }]}>Total Hours</Text>
-          </BlurView>
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.statBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-            <Text style={[styles.statVal, { color: theme.text }]}>{presentCount}</Text>
-            <Text style={[styles.statLab, { color: theme.muted }]}>Days Present</Text>
-          </BlurView>
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.statBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-            <Text style={[styles.statVal, { color: theme.text }]}>{records.length}</Text>
-            <Text style={[styles.statLab, { color: theme.muted }]}>Total Marked</Text>
-          </BlurView>
+          <View style={styles.statBox}>
+            <Text style={styles.statVal}>{totalHours.toFixed(1)}h</Text>
+            <Text style={styles.statLab}>Total Hours</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statVal}>{presentCount}</Text>
+            <Text style={styles.statLab}>Days Present</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statVal}>{records.length}</Text>
+            <Text style={styles.statLab}>Total Marked</Text>
+          </View>
         </View>
 
         {/* History */}
@@ -347,22 +346,22 @@ export default function Attendance() {
               r.status === "late" ? colors.warning :
               r.status === "absent" ? colors.danger : colors.textSecondary;
             return (
-              <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={i} style={[styles.historyRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]} testID={`attendance-record-${i}`}>
+              <View key={i} style={[styles.historyRow, { backgroundColor: theme.surface, borderColor: theme.border }]} testID={`attendance-record-${i}`}>
                 <View style={[styles.dateBlock, { borderColor: c.c }]}>
-                  <Text style={[styles.dateDay, { color: theme.text }]}>{new Date(r.attendance_date).getDate()}</Text>
-                  <Text style={[styles.dateMonth, { color: theme.muted }]}>
+                  <Text style={styles.dateDay}>{new Date(r.attendance_date).getDate()}</Text>
+                  <Text style={styles.dateMonth}>
                     {new Date(r.attendance_date).toLocaleString(undefined, { month: "short" }).toUpperCase()}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.historyShift, { color: theme.text }]}>{shiftLabel[r.shift_type] || "—"}</Text>
+                  <Text style={styles.historyShift}>{shiftLabel[r.shift_type] || "—"}</Text>
                   <Text style={[styles.historyStatus, { color: statusColor }]}>
                     {r.status.toUpperCase()}
                     {r.clock_in && ` · ${r.clock_in}-${r.clock_out}`}
                   </Text>
                 </View>
                 <Text style={styles.historyHours}>{r.hours_worked}h</Text>
-              </BlurView>
+              </View>
             );
           })
         )}
@@ -370,8 +369,8 @@ export default function Attendance() {
 
       {/* Clock In/Out Modal */}
       <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Manual Attendance</Text>
               <TouchableOpacity onPress={() => setShowModal(false)}>
@@ -411,14 +410,14 @@ export default function Attendance() {
               {submitting ? <ActivityIndicator color={colors.bg} /> :
                 <Text style={styles.modalBtnText}>SUBMIT ATTENDANCE</Text>}
             </TouchableOpacity>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
 
       {/* Leave Request Modal */}
       <Modal visible={showLeaveModal} transparent animationType="fade" onRequestClose={() => setShowLeaveModal(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Request Leave</Text>
               <TouchableOpacity onPress={() => setShowLeaveModal(false)}>
@@ -487,8 +486,8 @@ export default function Attendance() {
               {submitting ? <ActivityIndicator color={colors.bg} /> :
                 <Text style={styles.modalBtnText}>SUBMIT LEAVE</Text>}
             </TouchableOpacity>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

@@ -4,14 +4,12 @@ import {
   RefreshControl, Modal, TextInput, Alert, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, leaveColor, leaveLabel, roleLabel, shiftLabel } from "@/src/theme";
-import { useThemeMode } from "@/src/theme-context";
 
 function monthBounds(year: number, month: number) {
   const start = new Date(year, month, 1).toISOString().slice(0, 10);
@@ -48,7 +46,6 @@ function table(title: string, headers: string[], rows: any[][]) {
 
 export default function Reports() {
   const { user, isAdmin } = useAuth();
-  const { theme, isClassic } = useThemeMode();
   const params = useLocalSearchParams<{ user_id?: string }>();
   const [targetId, setTargetId] = useState<string>(params.user_id || user?.id || "");
   const [reportMode, setReportMode] = useState<"employee" | "all">("employee");
@@ -312,15 +309,15 @@ export default function Reports() {
         )}
       </View>
 
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.monthRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-        <TouchableOpacity testID="reports-prev-month" style={[styles.monthBtn, { borderColor: theme.border }]} onPress={prevMonth}>
-          <Ionicons name="chevron-back" size={18} color={theme.text} />
+      <View style={styles.monthRow}>
+        <TouchableOpacity testID="reports-prev-month" style={styles.monthBtn} onPress={prevMonth}>
+          <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.monthLabel, { color: theme.text }]}>{monthName}</Text>
-        <TouchableOpacity testID="reports-next-month" style={[styles.monthBtn, { borderColor: theme.border }]} onPress={nextMonth}>
-          <Ionicons name="chevron-forward" size={18} color={theme.text} />
+        <Text style={styles.monthLabel}>{monthName}</Text>
+        <TouchableOpacity testID="reports-next-month" style={styles.monthBtn} onPress={nextMonth}>
+          <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
       {isAdmin && (
         <View style={styles.modeRow}>
@@ -342,7 +339,7 @@ export default function Reports() {
       )}
 
       {isAdmin && (
-        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.exportBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={styles.exportBox}>
           <Text style={styles.exportTitle}>EXCEL EXPORT</Text>
           <View style={styles.exportInputs}>
             <TextInput
@@ -375,7 +372,7 @@ export default function Reports() {
               </>
             )}
           </TouchableOpacity>
-        </BlurView>
+        </View>
       )}
 
       <ScrollView
@@ -412,15 +409,15 @@ export default function Reports() {
                 <>
                   <Text style={styles.sectionLabel}>STAFF SUMMARY ({allReport.users.length})</Text>
                   {allReport.users.map((u: any) => (
-                    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={u.user_id} style={[styles.summaryRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+                    <View key={u.user_id} style={styles.summaryRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.summaryName, { color: theme.text }]}>{u.user_name}</Text>
-                        <Text style={[styles.summaryMeta, { color: theme.muted }]}>
+                        <Text style={styles.summaryName}>{u.user_name}</Text>
+                        <Text style={styles.summaryMeta}>
                           {u.records} marked · {u.present_days} present · {u.late_days} late · {u.absent_days} absent
                         </Text>
                       </View>
                       <Text style={styles.summaryHours}>{u.total_hours}h</Text>
-                    </BlurView>
+                    </View>
                   ))}
                 </>
               )}
@@ -431,16 +428,15 @@ export default function Reports() {
                   {allReport.records.slice().reverse().map((a: any, i: number) => (
                     <TouchableOpacity
                       key={`${a.user_id}-${a.attendance_date}-${i}`}
-                      style={{ marginBottom: 4, borderRadius: 4 }}
+                      style={styles.attRow}
                       onPress={() => openEditAttendanceModal(a)}
                       disabled={!isAdmin}
                       testID={`reports-all-att-row-${i}`}
                     >
-                      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.attRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, marginBottom: 0 }]}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.attDate, { color: theme.text }]}>{a.attendance_date} · {a.user_name}</Text>
+                        <Text style={styles.attDate}>{a.attendance_date} · {a.user_name}</Text>
                         {(a.clock_in || a.clock_out) && (
-                          <Text style={[styles.attTime, { color: theme.muted }]}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
+                          <Text style={styles.attTime}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
                         )}
                       </View>
                       <Text style={[styles.attStatus, {
@@ -451,15 +447,14 @@ export default function Reports() {
                         {a.status.toUpperCase()}
                       </Text>
                       <Text style={styles.attHours}>{a.hours_worked}h</Text>
-                      </BlurView>
                     </TouchableOpacity>
                   ))}
                 </>
               ) : (
-                <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.emptyBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+                <View style={styles.emptyBox}>
                   <Ionicons name="reader-outline" size={32} color={colors.textMuted} />
                   <Text style={styles.emptyText}>No attendance marked in this month</Text>
-                </BlurView>
+                </View>
               )}
             </>
           )
@@ -496,7 +491,7 @@ export default function Reports() {
               const bal = report.leaves.balances[k as "annual" | "sick" | "comp_off"];
               const title = k === "annual" ? "Vacation" : leaveLabel[k];
               return (
-                <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={k} style={[styles.leaveRow, { borderLeftColor: leaveColor(k), backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]} testID={`report-leave-${k}`}>
+                <View key={k} style={[styles.leaveRow, { borderLeftColor: leaveColor(k) }]} testID={`report-leave-${k}`}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.leaveTitle, { color: leaveColor(k) }]}>{title}</Text>
                     <View style={styles.leaveStats}>
@@ -515,21 +510,21 @@ export default function Reports() {
                       )}
                     </View>
                   </View>
-                </BlurView>
+                </View>
               );
             })}
 
             {/* User card */}
             <Text style={styles.sectionLabel}>PROFILE</Text>
-            <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.profileBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-              <Text style={[styles.profileName, { color: theme.text }]}>{report.user.full_name}</Text>
-              <Text style={[styles.profileMeta, { color: theme.muted }]}>{report.user.email}</Text>
-              <Text style={[styles.profileMeta, { color: theme.muted }]}>
+            <View style={styles.profileBox}>
+              <Text style={styles.profileName}>{report.user.full_name}</Text>
+              <Text style={styles.profileMeta}>{report.user.email}</Text>
+              <Text style={styles.profileMeta}>
                 {roleLabel[report.user.role]}
                 {report.user.team ? ` · TEAM ${report.user.team}` : ""}
                 {" · "}{report.user.location.toUpperCase()}
               </Text>
-            </BlurView>
+            </View>
 
             {/* Recent attendance records */}
             {report.attendance.records.length > 0 && (
@@ -538,16 +533,15 @@ export default function Reports() {
                 {report.attendance.records.slice().reverse().map((a: any, i: number) => (
                   <TouchableOpacity
                     key={i}
-                    style={{ marginBottom: 4, borderRadius: 4 }}
+                    style={styles.attRow}
                     onPress={() => openEditAttendanceModal(a)}
                     disabled={!isAdmin}
                     testID={`reports-emp-att-row-${i}`}
                   >
-                    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.attRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, marginBottom: 0 }]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.attDate, { color: theme.text }]}>{a.attendance_date}</Text>
+                      <Text style={styles.attDate}>{a.attendance_date}</Text>
                       {(a.clock_in || a.clock_out) && (
-                        <Text style={[styles.attTime, { color: theme.muted }]}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
+                        <Text style={styles.attTime}>{a.clock_in || "--"} → {a.clock_out || "--"}</Text>
                       )}
                     </View>
                     <Text style={[styles.attStatus, {
@@ -558,7 +552,6 @@ export default function Reports() {
                       {a.status.toUpperCase()}
                     </Text>
                     <Text style={styles.attHours}>{a.hours_worked}h</Text>
-                    </BlurView>
                   </TouchableOpacity>
                 ))}
               </>
@@ -572,16 +565,16 @@ export default function Reports() {
                   const title = lv.leave_type === "annual" ? "Vacation" : leaveLabel[lv.leave_type];
                   const statusColor = lv.status === "approved" ? colors.success : lv.status === "pending" ? colors.warning : colors.danger;
                   return (
-                    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={lv.id} style={[styles.leaveRecordRow, { borderLeftColor: c, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+                    <View key={lv.id} style={[styles.leaveRecordRow, { borderLeftColor: c }]}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.leaveRecordTitle, { color: c }]}>{title}</Text>
-                        <Text style={[styles.leaveRecordMeta, { color: theme.muted }]}>
+                        <Text style={styles.leaveRecordMeta}>
                           {lv.start_date} - {lv.end_date} | {lv.days} day{lv.days === 1 ? "" : "s"}
                         </Text>
-                        {lv.reason && <Text style={[styles.leaveRecordReason, { color: theme.text }]}>{lv.reason}</Text>}
+                        {lv.reason && <Text style={styles.leaveRecordReason}>{lv.reason}</Text>}
                       </View>
                       <Text style={[styles.leaveRecordStatus, { color: statusColor }]}>{lv.status.toUpperCase()}</Text>
-                    </BlurView>
+                    </View>
                   );
                 })}
               </>
@@ -592,8 +585,8 @@ export default function Reports() {
 
       {/* User picker */}
       <Modal visible={showUserPicker} transparent animationType="slide" onRequestClose={() => setShowUserPicker(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Employee</Text>
               <TouchableOpacity onPress={() => setShowUserPicker(false)}>
@@ -621,15 +614,15 @@ export default function Reports() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
 
       {/* Admin Attendance Edit Modal */}
       {isAdmin && (
         <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
-          <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-            <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}><ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={styles.modalBg}>
+            <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>{editRecord ? "Edit Attendance" : "Add Manual Attendance"}</Text>
                 <TouchableOpacity onPress={() => setShowEditModal(false)}>
@@ -754,8 +747,8 @@ export default function Reports() {
                   )}
                 </TouchableOpacity>
               </View>
-            </ScrollView></BlurView>
-          </BlurView>
+            </ScrollView>
+          </View>
         </Modal>
       )}
     </SafeAreaView>
@@ -763,13 +756,12 @@ export default function Reports() {
 }
 
 function BigStat({ label, value, color, icon }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.statBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]} testID={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+    <View style={styles.statBox} testID={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <Ionicons name={icon} size={20} color={color} />
       <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={[styles.statLab, { color: theme.muted }]}>{label}</Text>
-    </BlurView>
+      <Text style={styles.statLab}>{label}</Text>
+    </View>
   );
 }
 

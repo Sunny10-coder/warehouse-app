@@ -4,14 +4,12 @@ import {
   RefreshControl, Modal, TextInput, Alert, Animated, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
 import { colors, shiftLabel, shiftColor, leaveLabel, leaveColor } from "@/src/theme";
-import { useThemeMode } from "@/src/theme-context";
 
 const DOW = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -69,7 +67,6 @@ type CalendarData = {
 
 export default function CommandCenter() {
   const { isAdmin, refresh } = useAuth();
-  const { theme, isClassic } = useThemeMode();
   const { width: viewportWidth } = useWindowDimensions();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -184,15 +181,15 @@ export default function CommandCenter() {
         </View>
       </View>
 
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.monthRow, isMobileCalendar && styles.mobileMonthRow, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-        <TouchableOpacity testID="cc-prev" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn, { borderColor: theme.border }]} onPress={prev}>
-          <Ionicons name="chevron-back" size={18} color={theme.text} />
+      <View style={[styles.monthRow, isMobileCalendar && styles.mobileMonthRow]}>
+        <TouchableOpacity testID="cc-prev" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn]} onPress={prev}>
+          <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.monthLabel, isMobileCalendar && styles.mobileMonthLabel, { color: theme.text }]}>{monthLabel}</Text>
-        <TouchableOpacity testID="cc-next" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn, { borderColor: theme.border }]} onPress={next}>
-          <Ionicons name="chevron-forward" size={18} color={theme.text} />
+        <Text style={[styles.monthLabel, isMobileCalendar && styles.mobileMonthLabel]}>{monthLabel}</Text>
+        <TouchableOpacity testID="cc-next" style={[styles.monthBtn, isMobileCalendar && styles.mobileMonthBtn]} onPress={next}>
+          <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-      </BlurView>
+      </View>
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: 80 }}
@@ -200,7 +197,7 @@ export default function CommandCenter() {
       >
         {/* Comparison summary */}
         {data && !isMobileCalendar && (
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.compareTable, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={styles.compareTable}>
             <Text style={styles.sectionTitle}>MONTH AT A GLANCE</Text>
             <View style={styles.compareGrid}>
               <CompareCell icon="people" label="Active Staff" value={data.summary.total_active_staff} color={colors.morning} />
@@ -217,17 +214,17 @@ export default function CommandCenter() {
                 <Text style={{ color: colors.night }}>2 night</Text>
               </Text>
             </View>
-          </BlurView>
+          </View>
         )}
 
-        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.guideCard, isMobileCalendar && styles.mobileHidden, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={[styles.guideCard, isMobileCalendar && styles.mobileHidden]}>
           <View style={styles.guideRow}>
             <LegendItem color={colors.success} label="Covered" />
             <LegendItem color={colors.warning} label="At minimum" />
             <LegendItem color={colors.danger} label="Below minimum" />
             <LegendItem color={colors.danger} label="Off / Leave" />
           </View>
-        </BlurView>
+        </View>
 
         <Animated.View
           style={[
@@ -262,16 +259,15 @@ export default function CommandCenter() {
                         key={cell.date}
                         testID={`cc-day-${dayNum}`}
                         activeOpacity={0.78}
-                        style={{ padding: 0, marginHorizontal: 2, marginBottom: 7, borderRadius: 8, width: dayWidth - 4, minHeight: dayHeight }}
-                        onPress={() => setSelectedDay(cell)}
-                      >
-                        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[
+                        style={[
                           styles.cell,
                           isMobileCalendar && styles.mobileCell,
-                          { borderColor: color, backgroundColor: theme.surface, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, width: "100%", minHeight: dayHeight, marginHorizontal: 0, marginBottom: 0 },
-                        ]}>
+                          { borderColor: color, backgroundColor: bg, width: dayWidth - 4, minHeight: dayHeight },
+                        ]}
+                        onPress={() => setSelectedDay(cell)}
+                      >
                         <View style={styles.cellTop}>
-                          <Text style={[styles.cellDate, isMobileCalendar && styles.mobileCellDate, { color: theme.text }]}>{dayNum}</Text>
+                          <Text style={[styles.cellDate, isMobileCalendar && styles.mobileCellDate]}>{dayNum}</Text>
                           <View style={[styles.dayStatusPill, isMobileCalendar && styles.mobileDayStatusPill, { borderColor: color, backgroundColor: `${color}18` }]}>
                             <Text style={[styles.dayStatusText, isMobileCalendar && styles.mobileDayStatusText, { color }]}>{statusText}</Text>
                           </View>
@@ -284,7 +280,6 @@ export default function CommandCenter() {
                             <Text style={styles.pendingRiskText}>Pending leave may reduce coverage</Text>
                           </View>
                         )}
-                        </BlurView>
                       </TouchableOpacity>
                     );
                   })}
@@ -293,18 +288,18 @@ export default function CommandCenter() {
             </View>
         </Animated.View>
         {data && isMobileCalendar && (
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.mobileGuideCard, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={styles.mobileGuideCard}>
             <LegendItem color={colors.success} label="Assigned" />
             <LegendItem color={colors.danger} label="Off / Leave" />
             <Text style={styles.mobileGuideText}>{data.summary.total_active_staff} staff</Text>
-          </BlurView>
+          </View>
         )}
       </ScrollView>
 
       {/* Day detail modal */}
       <Modal visible={!!selectedDay} transparent animationType="slide" onRequestClose={() => setSelectedDay(null)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}><ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.modalBg}>
+          <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 40 }}>
             {selectedDay && (
               <>
                 <View style={styles.modalHeader}>
@@ -371,9 +366,9 @@ export default function CommandCenter() {
                       const state = rosterState(row);
                       const sc = shiftColor(row.shift_type || "");
                       return (
-                        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={`${row.user_id}-${row.shift_type}-${i}`} style={[styles.rosterRow, { borderLeftColor: state.color, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+                        <View key={`${row.user_id}-${row.shift_type}-${i}`} style={[styles.rosterRow, { borderLeftColor: state.color }]}>
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.entryName, { color: theme.text }]}>{row.user_name}</Text>
+                            <Text style={styles.entryName}>{row.user_name}</Text>
                             <Text style={[styles.entryShift, { color: sc.c }]}>
                               {shiftLabel[row.shift_type || ""] || row.shift_type || "Unscheduled"}
                               {row.start_time ? ` · ${row.start_time}-${row.end_time}` : ""}
@@ -386,7 +381,7 @@ export default function CommandCenter() {
                           <View style={[styles.logPill, { borderColor: state.color }]}>
                             <Text style={[styles.logPillText, { color: state.color }]}>{state.label}</Text>
                           </View>
-                        </BlurView>
+                        </View>
                       );
                     })}
                   </>
@@ -404,9 +399,9 @@ export default function CommandCenter() {
                           : att.status === "late" ? colors.warning
                           : att.status === "absent" ? colors.danger : colors.textSecondary;
                       return (
-                        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={`${att.user_id}-${i}`} style={[styles.attendanceRow, { borderLeftColor: statusColor, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+                        <View key={`${att.user_id}-${i}`} style={[styles.attendanceRow, { borderLeftColor: statusColor }]}>
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.entryName, { color: theme.text }]}>{att.user_name}</Text>
+                            <Text style={styles.entryName}>{att.user_name}</Text>
                             <Text style={[styles.entryShift, { color: statusColor }]}>
                               {att.status.toUpperCase()} · {att.hours_worked || 0}h
                             </Text>
@@ -415,7 +410,7 @@ export default function CommandCenter() {
                             )}
                           </View>
                           <Ionicons name="checkmark-done" size={16} color={statusColor} />
-                        </BlurView>
+                        </View>
                       );
                     })}
                   </>
@@ -426,9 +421,9 @@ export default function CommandCenter() {
                   <>
                     <Text style={styles.modalSection}>ON LEAVE ({selectedDay.leaves.length})</Text>
                     {selectedDay.leaves.map((lv, i) => (
-                      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={i} style={[styles.leaveRow, { borderLeftColor: leaveColor(lv.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+                      <View key={i} style={[styles.leaveRow, { borderLeftColor: leaveColor(lv.leave_type) }]}>
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.entryName, { color: theme.text }]}>{lv.user_name}</Text>
+                          <Text style={styles.entryName}>{lv.user_name}</Text>
                           <Text style={[styles.entryShift, { color: leaveColor(lv.leave_type) }]}>
                             {leaveLabel[lv.leave_type]}
                           </Text>
@@ -440,7 +435,7 @@ export default function CommandCenter() {
                             color: lv.status === "approved" ? colors.success : colors.warning,
                           }]}>{lv.status.toUpperCase()}</Text>
                         </View>
-                      </BlurView>
+                      </View>
                     ))}
                   </>
                 )}
@@ -454,15 +449,15 @@ export default function CommandCenter() {
                         {shiftLabel[sk] || sk.toUpperCase()} ({arr.length})
                       </Text>
                       {arr.map(e => (
-                        <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={e.user_id} style={[styles.entryRow, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+                        <View key={e.user_id} style={[styles.entryRow, { borderLeftColor: sc.c }]}>
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.entryName, { color: theme.text }]}>{e.user_name}</Text>
+                            <Text style={styles.entryName}>{e.user_name}</Text>
                             {e.start_time && (
                               <Text style={styles.entryTime}>{e.start_time} – {e.end_time}</Text>
                             )}
                           </View>
                           <Ionicons name="person" size={16} color={colors.textMuted} />
-                        </BlurView>
+                        </View>
                       ))}
                     </View>
                   );
@@ -484,13 +479,13 @@ export default function CommandCenter() {
                 )}
               </>
             )}
-          </ScrollView></BlurView>
-        </BlurView>
+          </ScrollView>
+        </View>
       </Modal>
 
       <Modal visible={leaveModalOpen} transparent animationType="slide" onRequestClose={() => setLeaveModalOpen(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.leaveModalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+        <View style={styles.modalBg}>
+          <View style={styles.leaveModalBox}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalDate}>Apply Leave</Text>
@@ -568,8 +563,8 @@ export default function CommandCenter() {
                 <Text style={styles.submitLeaveBtnText}>SUBMIT LEAVE REQUEST</Text>
               )}
             </TouchableOpacity>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -690,13 +685,12 @@ function RosterSummary({ label, value, color }: any) {
 }
 
 function CompareCell({ icon, label, value, color }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.compareCell, { backgroundColor: theme.surfaceHi, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]} testID={`cc-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+    <View style={styles.compareCell} testID={`cc-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <Ionicons name={icon} size={18} color={color} />
       <Text style={[styles.compareValue, { color }]}>{value}</Text>
-      <Text style={[styles.compareLabel, { color: theme.muted }]}>{label}</Text>
-    </BlurView>
+      <Text style={styles.compareLabel}>{label}</Text>
+    </View>
   );
 }
 

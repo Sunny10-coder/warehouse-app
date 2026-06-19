@@ -4,7 +4,6 @@ import {
   RefreshControl, Modal, TextInput, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -22,7 +21,7 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
 
 export default function Leaves() {
   const { user, refresh } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -75,10 +74,10 @@ export default function Leaves() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
+      <View style={styles.header}>
         <View>
           <Text style={styles.overline}>LEAVES</Text>
-          <Text style={[styles.title, { color: theme.text }]}>My Requests</Text>
+          <Text style={styles.title}>My Requests</Text>
         </View>
         <TouchableOpacity testID="leaves-new-btn" style={styles.newBtn} onPress={() => setShowModal(true)}>
           <Ionicons name="add" size={20} color={colors.bg} />
@@ -104,7 +103,7 @@ export default function Leaves() {
             <Text style={styles.emptySub}>Tap APPLY to submit a new request</Text>
           </View>
         ) : leaves.map((l, i) => (
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]} testID={`leave-item-${i}`}>
+          <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border }]} testID={`leave-item-${i}`}>
             <View style={styles.cardTop}>
               <View>
                 <Text style={[styles.leaveType, { color: leaveColor(l.leave_type) }]}>
@@ -116,21 +115,21 @@ export default function Leaves() {
               </View>
               <StatusBadge status={l.status} />
             </View>
-            <Text style={[styles.reason, { color: theme.text }]}>{l.reason}</Text>
+            <Text style={styles.reason}>{l.reason}</Text>
             {l.approval_notes && (
               <Text style={styles.approverNote}>Note: {l.approval_notes}</Text>
             )}
-          </BlurView>
+          </View>
         ))}
       </ScrollView>
 
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>New Leave Request</Text>
+              <Text style={styles.modalTitle}>New Leave Request</Text>
               <TouchableOpacity testID="leave-close" onPress={() => setShowModal(false)}>
-                <Ionicons name="close" size={22} color={theme.muted} />
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -157,7 +156,7 @@ export default function Leaves() {
             <Text style={styles.modalLabel}>Start Date (YYYY-MM-DD)</Text>
             <TextInput
               testID="leave-start-date"
-              style={[styles.modalInput, { backgroundColor: theme.surfaceHi, borderColor: theme.border, color: theme.text }]}
+              style={styles.modalInput}
               value={startDate}
               onChangeText={setStartDate}
               placeholder="2026-06-01"
@@ -167,7 +166,7 @@ export default function Leaves() {
             <Text style={styles.modalLabel}>End Date</Text>
             <TextInput
               testID="leave-end-date"
-              style={[styles.modalInput, { backgroundColor: theme.surfaceHi, borderColor: theme.border, color: theme.text }]}
+              style={styles.modalInput}
               value={endDate}
               onChangeText={setEndDate}
               placeholder="2026-06-03"
@@ -177,7 +176,7 @@ export default function Leaves() {
             <Text style={styles.modalLabel}>Reason</Text>
             <TextInput
               testID="leave-reason"
-              style={[styles.modalInput, { height: 80, textAlignVertical: "top", backgroundColor: theme.surfaceHi, borderColor: theme.border, color: theme.text }]}
+              style={[styles.modalInput, { height: 80, textAlignVertical: "top" }]}
               value={reason}
               onChangeText={setReason}
               multiline
@@ -201,20 +200,19 @@ export default function Leaves() {
               {submitting ? <ActivityIndicator color={colors.bg} /> :
                 <Text style={styles.submitBtnText}>SUBMIT REQUEST</Text>}
             </TouchableOpacity>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
 function BalancePill({ label, value, color }: any) {
-  const { theme, isClassic } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.balancePill, { borderColor: color, backgroundColor: theme.surface, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
-      <Text style={[styles.balanceValue, { color: theme.text }]}>{value}</Text>
+    <View style={[styles.balancePill, { borderColor: color }]}>
+      <Text style={styles.balanceValue}>{value}</Text>
       <Text style={[styles.balanceLabel, { color }]}>{label}</Text>
-    </BlurView>
+    </View>
   );
 }
 
