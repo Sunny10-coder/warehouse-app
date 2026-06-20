@@ -9,8 +9,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useRealtimeRefresh } from "@/src/realtime";
-import { colors, leaveLabel, leaveColor } from "@/src/theme";
+import { colors, leaveLabel, leaveColor, appTheme } from "@/src/theme";
 import { useThemeMode } from "@/src/theme-context";
+import { SectionRow } from "@/src/components/SectionRow";
 
 const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
   { key: "annual", label: "Annual Vacation", icon: "airplane" },
@@ -35,7 +36,7 @@ export default function Leaves() {
   const load = useCallback(async () => {
     try {
       const r = await api.get("/leaves");
-      setLeaves(r.data);
+      setLeaves(r.data || []);
     } catch (e) {
       console.warn(errMsg(e));
     } finally {
@@ -72,6 +73,28 @@ export default function Leaves() {
     }
   };
 
+  const pendingLeaves = leaves.filter(l => l.status === "pending");
+  const approvedLeaves = leaves.filter(l => l.status === "approved");
+  const rejectedLeaves = leaves.filter(l => l.status === "rejected");
+
+  const renderLeaveTile = (l: any) => (
+    <View style={styles.leaveTile}>
+      <View style={[styles.leaveAccent, { backgroundColor: leaveColor(l.leave_type) }]} />
+      <Text style={[styles.leaveType, { color: leaveColor(l.leave_type) }]} numberOfLines={1}>
+        {leaveLabel[l.leave_type] || l.leave_type}
+      </Text>
+      <Text style={styles.leaveDates}>
+        {l.start_date} → {l.end_date}
+      </Text>
+      <Text style={styles.leaveDays}>{l.days} day{l.days > 1 ? "s" : ""}</Text>
+      <Text style={styles.leaveReason} numberOfLines={2}>{l.reason}</Text>
+      {l.approval_notes && (
+        <Text style={styles.approverNote} numberOfLines={1}>Note: {l.approval_notes}</Text>
+      )}
+      <StatusBadge status={l.status} />
+    </View>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
       <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
@@ -93,39 +116,40 @@ export default function Leaves() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
       >
-        {leaves.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="airplane-outline" size={48} color={colors.textMuted} />
-            <Text style={styles.emptyText}>No leave requests yet</Text>
-            <Text style={styles.emptySub}>Tap APPLY to submit a new request</Text>
-          </View>
-        ) : leaves.map((l, i) => (
-          <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]} testID={`leave-item-${i}`}>
-            <View style={styles.cardTop}>
-              <View>
-                <Text style={[styles.leaveType, { color: leaveColor(l.leave_type) }]}>
-                  {leaveLabel[l.leave_type]}
-                </Text>
-                <Text style={styles.leaveDates}>
-                  {l.start_date} → {l.end_date} · {l.days} day{l.days > 1 ? "s" : ""}
-                </Text>
-              </View>
-              <StatusBadge status={l.status} />
-            </View>
-            <Text style={[styles.reason, { color: theme.text }]}>{l.reason}</Text>
-            {l.approval_notes && (
-              <Text style={styles.approverNote}>Note: {l.approval_notes}</Text>
-            )}
-          </View>
-        ))}
+        <View style={{ height: 20 }} />
+
+        <SectionRow
+          title="Pending Requests"
+          data={pendingLeaves}
+          keyExtractor={(l) => l.id}
+          emptyText="No pending leave requests"
+          renderItem={renderLeaveTile}
+        />
+
+        <SectionRow
+          title="Approved Leaves"
+          data={approvedLeaves}
+          keyExtractor={(l) => l.id}
+          emptyText="No approved leaves"
+          renderItem={renderLeaveTile}
+        />
+
+        {rejectedLeaves.length > 0 && (
+          <SectionRow
+            title="Rejected Leaves"
+            data={rejectedLeaves}
+            keyExtractor={(l) => l.id}
+            renderItem={renderLeaveTile}
+          />
+        )}
       </ScrollView>
 
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
-        <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.8)" }]}>
-          <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+        <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.85)" }]}>
+          <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>New Leave Request</Text>
               <TouchableOpacity testID="leave-close" onPress={() => setShowModal(false)}>
@@ -159,7 +183,7 @@ export default function Leaves() {
               style={[styles.modalInput, { backgroundColor: theme.surfaceHi, borderColor: theme.border, color: theme.text }]}
               value={startDate}
               onChangeText={setStartDate}
-              placeholder="2026-06-01"
+              placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.textMuted}
             />
 
@@ -169,7 +193,7 @@ export default function Leaves() {
               style={[styles.modalInput, { backgroundColor: theme.surfaceHi, borderColor: theme.border, color: theme.text }]}
               value={endDate}
               onChangeText={setEndDate}
-              placeholder="2026-06-03"
+              placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.textMuted}
             />
 
@@ -241,27 +265,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, height: 40, borderRadius: 4,
   },
   newBtnText: { color: colors.bg, fontWeight: "800", letterSpacing: 1, fontSize: 12 },
-  balanceRow: { flexDirection: "row", paddingHorizontal: 20, gap: 10, marginBottom: 8 },
+  balanceRow: { flexDirection: "row", paddingHorizontal: 20, gap: 10, marginBottom: 8, marginTop: 12 },
   balancePill: {
-    flex: 1, borderWidth: 1, borderRadius: 4, padding: 12, alignItems: "center",
+    flex: 1, borderWidth: 1, borderRadius: 10, padding: 12, alignItems: "center",
     backgroundColor: colors.surface,
   },
   balanceValue: { color: colors.textPrimary, fontSize: 22, fontWeight: "800" },
   balanceLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 1, marginTop: 2 },
-  empty: { alignItems: "center", padding: 60, gap: 10 },
-  emptyText: { color: colors.textSecondary, fontSize: 15, fontWeight: "600" },
-  emptySub: { color: colors.textMuted, fontSize: 12 },
-  card: {
-    backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4,
-    borderRadius: 6, padding: 14, marginBottom: 10,
+  
+  leaveTile: {
+    width: 200,
+    backgroundColor: appTheme.surface,
+    borderColor: appTheme.border,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    gap: 4,
   },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  leaveAccent: {
+    width: 32,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 6,
+  },
   leaveType: { fontSize: 13, fontWeight: "800", letterSpacing: 0.5 },
-  leaveDates: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
-  reason: { color: colors.textPrimary, fontSize: 13, marginTop: 8 },
-  approverNote: { color: colors.textMuted, fontStyle: "italic", fontSize: 12, marginTop: 6 },
-  statusBadge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 2 },
-  statusText: { fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  leaveDates: { color: appTheme.text, fontSize: 12, marginTop: 4, fontWeight: "600" },
+  leaveDays: { color: appTheme.muted, fontSize: 11 },
+  leaveReason: { color: appTheme.muted, fontSize: 11, marginTop: 8, fontStyle: "italic" },
+  approverNote: { color: appTheme.muted, fontSize: 11, marginTop: 4, fontWeight: "600" },
+  
+  statusBadge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: "flex-start", marginTop: 10 },
+  statusText: { fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: colors.surface, borderColor: colors.border, borderTopWidth: 1, borderLeftWidth: 1,
