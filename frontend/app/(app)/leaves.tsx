@@ -4,7 +4,6 @@ import {
   RefreshControl, Modal, TextInput, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -22,7 +21,7 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
 
 export default function Leaves() {
   const { user, refresh } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -104,7 +103,7 @@ export default function Leaves() {
             <Text style={styles.emptySub}>Tap APPLY to submit a new request</Text>
           </View>
         ) : leaves.map((l, i) => (
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]} testID={`leave-item-${i}`}>
+          <View key={l.id} style={[styles.card, { borderLeftColor: leaveColor(l.leave_type), backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]} testID={`leave-item-${i}`}>
             <View style={styles.cardTop}>
               <View>
                 <Text style={[styles.leaveType, { color: leaveColor(l.leave_type) }]}>
@@ -120,13 +119,13 @@ export default function Leaves() {
             {l.approval_notes && (
               <Text style={styles.approverNote}>Note: {l.approval_notes}</Text>
             )}
-          </BlurView>
+          </View>
         ))}
       </ScrollView>
 
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+        <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.8)" }]}>
+          <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>New Leave Request</Text>
               <TouchableOpacity testID="leave-close" onPress={() => setShowModal(false)}>
@@ -201,20 +200,20 @@ export default function Leaves() {
               {submitting ? <ActivityIndicator color={colors.bg} /> :
                 <Text style={styles.submitBtnText}>SUBMIT REQUEST</Text>}
             </TouchableOpacity>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
 function BalancePill({ label, value, color }: any) {
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.balancePill, { borderColor: color, backgroundColor: theme.surface, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+    <View style={[styles.balancePill, { borderColor: color, backgroundColor: theme.surface, borderWidth: 1 }]}>
       <Text style={[styles.balanceValue, { color: theme.text }]}>{value}</Text>
       <Text style={[styles.balanceLabel, { color }]}>{label}</Text>
-    </BlurView>
+    </View>
   );
 }
 

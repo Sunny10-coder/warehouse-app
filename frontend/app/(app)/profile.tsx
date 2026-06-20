@@ -1,6 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth";
@@ -9,7 +8,7 @@ import { useThemeMode } from "@/src/theme-context";
 
 export default function Profile() {
   const { user, logout } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
 
   const onLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -37,7 +36,7 @@ export default function Profile() {
         <Text style={[styles.overline, { color: theme.muted }]}>PROFILE</Text>
         <Text style={[styles.title, { color: theme.text }]}>My Account</Text>
 
-        <BlurView intensity={40} tint={isClassic ? "dark" : "light"} style={[styles.profileCard, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+        <View style={[styles.profileCard, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
           {user.avatar_url ? (
             <Image source={{ uri: user.avatar_url }} style={styles.avatarLg} />
           ) : (
@@ -51,7 +50,7 @@ export default function Profile() {
             <Ionicons name="shield-checkmark" size={12} color={colors.morning} />
             <Text style={styles.roleText}>{roleLabel[user.role]}</Text>
           </View>
-        </BlurView>
+        </View>
 
         <Text style={[styles.overline, { color: theme.muted }]}>DETAILS</Text>
         <DetailRow icon="people" label="Team" value={user.team ? `TEAM ${user.team}` : "—"} />
@@ -75,13 +74,13 @@ export default function Profile() {
 }
 
 function DetailRow({ icon, label, value, valueColor }: any) {
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   return (
-    <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.detailRow, { borderColor: theme.border, backgroundColor: theme.surface, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+    <View style={[styles.detailRow, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
       <Ionicons name={icon} size={18} color={theme.muted} />
       <Text style={[styles.detailLabel, { color: theme.muted }]}>{label}</Text>
       <Text style={[styles.detailValue, { color: theme.text }, valueColor && { color: valueColor }]}>{value}</Text>
-    </BlurView>
+    </View>
   );
 }
 

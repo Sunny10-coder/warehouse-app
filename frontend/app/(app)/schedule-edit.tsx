@@ -4,7 +4,6 @@ import {
   RefreshControl, Modal, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, errMsg } from "@/src/api";
@@ -45,7 +44,7 @@ function canAssignShift(user: any, shiftType: string, isSunday: boolean, entries
 }
 
 export default function ScheduleEdit() {
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const params = useLocalSearchParams<{ date?: string }>();
   const [date, setDate] = useState(params.date || new Date().toISOString().slice(0, 10));
   const [entries, setEntries] = useState<any[]>([]);
@@ -102,7 +101,7 @@ export default function ScheduleEdit() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={["top"]}>
-      <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderBottomWidth: 1 }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
         <TouchableOpacity testID="schedule-edit-back" style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color={theme.text} />
         </TouchableOpacity>
@@ -132,7 +131,7 @@ export default function ScheduleEdit() {
             <Ionicons name="chevron-forward" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
-      </BlurView>
+      </View>
 
       <ScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 80 }}
@@ -144,7 +143,7 @@ export default function ScheduleEdit() {
           const showWarn = g.min > 0 && okCount < g.min;
           const eligibleCount = users.filter(u => canAssignShift(u, g.key, isSunday, entries, users)).length;
           return (
-            <BlurView intensity={30} tint={isClassic ? "dark" : "light"} key={g.key} style={[styles.shiftSection, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderRightColor: theme.glassHighlight }]}>
+            <View key={g.key} style={[styles.shiftSection, { borderLeftColor: sc.c, backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
               <View style={styles.shiftSectionHeader}>
                 <Text style={[styles.shiftSectionTitle, { color: sc.c }]}>{g.title}</Text>
                 <View style={styles.shiftCount}>
@@ -175,12 +174,12 @@ export default function ScheduleEdit() {
                 <Ionicons name="add" size={16} color={sc.c} />
                 <Text style={[styles.addBtnText, { color: sc.c }]}>{eligibleCount === 0 ? "NO ELIGIBLE STAFF" : "ADD STAFF"}</Text>
               </TouchableOpacity>
-            </BlurView>
+            </View>
           );
         })}
 
         {(unassigned.length > 0 || offEntries.length > 0) && (
-          <BlurView intensity={30} tint={isClassic ? "dark" : "light"} style={[styles.shiftSection, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight }]}>
+          <View style={[styles.shiftSection, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
             <Text style={[styles.offTitle, { color: theme.muted }]}>OFF / UNASSIGNED ({unassigned.length + offEntries.length})</Text>
             {[...offEntries.map(e => ({ id: e.user_id, name: e.user_name, type: e.shift_type })),
               ...unassigned.map(u => ({ id: u.id, name: u.full_name, type: "" }))].map(p => (
@@ -208,14 +207,14 @@ export default function ScheduleEdit() {
                 <Text style={[styles.entryTypeBadge, { color: theme.muted }]}>{p.type ? shiftLabel[p.type] : "—"}</Text>
               </TouchableOpacity>
             ))}
-          </BlurView>
+          </View>
         )}
       </ScrollView>
 
       {/* Assign modal */}
       <Modal visible={!!assignFor} transparent animationType="slide" onRequestClose={() => setAssignFor(null)}>
-        <BlurView intensity={20} tint="dark" style={styles.modalBg}>
-          <BlurView intensity={60} tint={isClassic ? "dark" : "light"} style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.glassHighlight, borderLeftColor: theme.glassHighlight, borderWidth: 1 }]}>
+        <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.8)" }]}>
+          <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Assign to {assignFor && shiftLabel[assignFor]}</Text>
               <TouchableOpacity onPress={() => setAssignFor(null)}>
@@ -247,8 +246,8 @@ export default function ScheduleEdit() {
                 );
               })}
             </ScrollView>
-          </BlurView>
-        </BlurView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

@@ -1,13 +1,13 @@
 // Theme constants for the warehouse app (Tactical Dark)
 export const colors = {
-  bg: "#0A0A0A",
+  bg: "#000000",
   surface: "#141414",
-  surfaceHi: "#1F1F1F",
-  border: "#27272A",
-  borderFocus: "#FFD600",
+  surfaceHi: "#2F2F2F",
+  border: "#333333",
+  borderFocus: "#E50914",
   textPrimary: "#FFFFFF",
-  textSecondary: "#A1A1AA",
-  textMuted: "#71717A",
+  textSecondary: "#B3B3B3",
+  textMuted: "#808080",
 
   // shifts
   morning: "#FFD600",
@@ -98,18 +98,18 @@ export const leaveColor = (t: string) => {
 };
 
 export const appTheme = {
-  bg: "rgba(255, 255, 255, 0.0)", // Transparent so gradient shows through
-  surface: "rgba(255, 255, 255, 0.3)", // Glass body
-  surfaceHi: "rgba(255, 255, 255, 0.4)",
-  surfaceSoft: "rgba(255, 255, 255, 0.15)",
-  surfaceLavender: "rgba(255, 255, 255, 0.4)",
-  border: "rgba(255, 255, 255, 0.5)", // Glass edge
-  text: "#09052D",
-  muted: "rgba(9, 5, 45, 0.6)",
-  primary: "rgba(116, 97, 242, 0.9)", // Semi-transparent vibrant primary
-  primaryDark: "#28166F",
-  primaryDeep: "#1E125B",
-  purpleSoft: "rgba(116, 97, 242, 0.15)",
+  bg: "#000000",
+  surface: "#141414",
+  surfaceHi: "#2F2F2F",
+  surfaceSoft: "#181818",
+  surfaceLavender: "#141414",
+  border: "#333333",
+  text: "#FFFFFF",
+  muted: "#B3B3B3",
+  primary: "#E50914",
+  primaryDark: "#B81D24",
+  primaryDeep: "#831010",
+  purpleSoft: "rgba(229, 9, 20, 0.15)",
   green: "rgba(16, 185, 129, 0.9)",
   greenSoft: "rgba(16, 185, 129, 0.15)",
   yellow: "rgba(245, 158, 11, 0.9)",
@@ -118,6 +118,6 @@ export const appTheme = {
   redSoft: "rgba(239, 68, 68, 0.15)",
   blue: "rgba(59, 130, 246, 0.9)",
   blueSoft: "rgba(59, 130, 246, 0.15)",
-  shadow: "rgba(30, 20, 90, 0.25)",
-  glassHighlight: "rgba(255, 255, 255, 0.8)", // Top/Left 3D bevel edge
+  shadow: "rgba(0, 0, 0, 0.5)",
+  glassHighlight: "transparent",
 } as const;

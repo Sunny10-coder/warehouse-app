@@ -15,7 +15,7 @@ const BG = "https://static.prod-images.emergentagent.com/jobs/da884466-d91f-4b87
 
 export default function Login() {
   const { login } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
   const [email, setEmail] = useState("manager@warehouse.com");
   const [password, setPassword] = useState("Manager@123");
   const [show, setShow] = useState(false);
@@ -44,8 +44,8 @@ export default function Login() {
   };
 
   return (
-    <ImageBackground source={{ uri: BG }} style={[styles.bg, { backgroundColor: theme.bg }]} blurRadius={isClassic ? 2 : 14}>
-      <View style={[styles.overlay, { backgroundColor: isClassic ? "rgba(10,10,10,0.85)" : "rgba(243,241,255,0.9)" }]} />
+    <ImageBackground source={{ uri: BG }} style={[styles.bg, { backgroundColor: theme.bg }]} blurRadius={2}>
+      <View style={[styles.overlay, { backgroundColor: "rgba(10,10,10,0.85)" }]} />
       <SafeAreaView style={{ flex: 1 }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -56,7 +56,7 @@ export default function Login() {
               <ThemeSwitch />
             </View>
             <View style={styles.logoWrap}>
-              <View style={[styles.logoBadge, { borderColor: theme.primary, backgroundColor: isClassic ? colors.morningBg : theme.purpleSoft }]}>
+              <View style={[styles.logoBadge, { borderColor: theme.primary, backgroundColor: colors.morningBg }]}>
                 <Ionicons name="cube" size={32} color={theme.primary} />
               </View>
               <Text style={[styles.brand, { color: theme.text }]}>WAREHOUSE OPS</Text>
@@ -104,16 +104,16 @@ export default function Login() {
 
               <TouchableOpacity
                 testID="login-submit-button"
-                style={[styles.btnPrimary, { backgroundColor: isClassic ? colors.textPrimary : theme.primary }, busy && { opacity: 0.6 }]}
+                style={[styles.btnPrimary, { backgroundColor: colors.textPrimary }, busy && { opacity: 0.6 }]}
                 onPress={onSubmit}
                 disabled={busy}
               >
                 {busy ? (
-                  <ActivityIndicator color={isClassic ? colors.bg : "#fff"} />
+                  <ActivityIndicator color={colors.bg} />
                 ) : (
                   <>
-                    <Text style={[styles.btnPrimaryText, { color: isClassic ? colors.bg : "#fff" }]}>SIGN IN</Text>
-                    <Ionicons name="arrow-forward" size={18} color={isClassic ? colors.bg : "#fff"} />
+                    <Text style={[styles.btnPrimaryText, { color: colors.bg }]}>SIGN IN</Text>
+                    <Ionicons name="arrow-forward" size={18} color={colors.bg} />
                   </>
                 )}
               </TouchableOpacity>

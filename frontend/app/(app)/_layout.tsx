@@ -1,14 +1,13 @@
 import { Tabs, Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/src/auth";
-import { appTheme, colors } from "@/src/theme";
+import { colors } from "@/src/theme";
 import { useThemeMode } from "@/src/theme-context";
 
 export default function AppLayout() {
   const { user, loading, isAdmin } = useAuth();
-  const { theme, isClassic } = useThemeMode();
+  const { theme } = useThemeMode();
 
   if (loading) {
     return (
@@ -20,18 +19,8 @@ export default function AppLayout() {
 
   if (!user) return <Redirect href="/(auth)/login" />;
 
-  const bgColors: readonly [string, string, ...string[]] = isClassic 
-    ? ["#050510", "#1E125B", "#09052D"] 
-    : ["#F8F7FF", "#E8E3FF", "#DDEBFF", "#D4F8E6"];
-
   return (
-    <View style={{ flex: 1 }}>
-      <LinearGradient
-        colors={bgColors}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <Tabs
         screenOptions={{
           sceneStyle: { backgroundColor: "transparent" },
@@ -39,9 +28,9 @@ export default function AppLayout() {
           tabBarActiveTintColor: theme.primary,
           tabBarInactiveTintColor: theme.muted,
           tabBarStyle: {
-            backgroundColor: isClassic ? "rgba(0, 0, 0, 0.65)" : "rgba(255, 255, 255, 0.65)",
-            borderTopColor: theme.border,
-            borderTopWidth: 1,
+            backgroundColor: theme.surface,
+            borderTopColor: theme.primary,
+            borderTopWidth: 2,
             height: 72,
             paddingBottom: 10,
             paddingTop: 8,
@@ -102,5 +91,5 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
-  loader: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: appTheme.bg },
+  loader: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
 });
