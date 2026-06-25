@@ -33,10 +33,10 @@ export default function RootLayout() {
 }
 
 function RootStack() {
-  const { theme } = useThemeMode();
+  const { theme, mode } = useThemeMode();
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style={mode === "light" ? "dark" : "light"} />
       <Stack
         screenOptions={{
           headerShown: false,

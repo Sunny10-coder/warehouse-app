@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from io import BytesIO
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -21,7 +22,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -283,6 +284,36 @@ class LeaveAction(BaseModel):
     action: str  # approve | reject
     notes: Optional[str] = None
 
+class SwapRequest(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    requester_id: str
+    requester_name: str
+    swap_user_id: str
+    swap_user_name: str
+    shift_date: str
+    requester_original_shift: str
+    swap_user_original_shift: str
+    reason: str
+    status: str = "pending_employee_approval"
+    employee_decision_at: Optional[datetime] = None
+    employee_notes: Optional[str] = None
+    admin_decision_at: Optional[datetime] = None
+    admin_id: Optional[str] = None
+    admin_notes: Optional[str] = None
+    executed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SwapCreate(BaseModel):
+    swap_user_id: str
+    shift_date: str
+    reason: str
+
+
+class SwapAction(BaseModel):
+    action: str  # approve | reject | cancel
+    notes: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # Lifespan: db connect + seed
@@ -299,6 +330,10 @@ async def lifespan(app: FastAPI):
     await db.attendance.create_index([("user_id", 1), ("attendance_date", 1)], unique=True)
     await db.comp_off_grants.create_index([("user_id", 1), ("earned_date", -1)])
     await db.comp_off_grants.create_index("source_id", unique=True, sparse=True)
+    await db.swap_requests.create_index([("shift_date", 1), ("status", 1)])
+    await db.swap_requests.create_index([("requester_id", 1), ("created_at", -1)])
+    await db.swap_requests.create_index([("swap_user_id", 1), ("created_at", -1)])
+    await db.audit_events.create_index([("entity_type", 1), ("entity_id", 1), ("created_at", -1)])
 
     await _seed_initial_users(db)
     await _cleanup_placeholder_staff(db)
@@ -1285,6 +1320,271 @@ async def monthly_attendance(
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Swap requests and audit trail
+# ---------------------------------------------------------------------------
+async def _audit_event(db, entity_type: str, entity_id: str, action: str, actor: dict, details: Optional[dict] = None) -> None:
+    await db.audit_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "action": action,
+        "actor_id": actor.get("_id"),
+        "actor_name": actor.get("full_name", "System"),
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc),
+    })
+
+
+def _swap_public(doc: dict) -> SwapRequest:
+    clean = {k: v for k, v in doc.items() if k != "_id"}
+    return SwapRequest(**clean)
+
+
+async def _available_swap_candidates(db, requester_id: str, shift_date: str) -> list[dict]:
+    requester_schedule = await db.schedules.find_one({"user_id": requester_id, "shift_date": shift_date})
+    if not requester_schedule:
+        return []
+    on_leave = await db.leaves.find({
+        "status": "approved",
+        "start_date": {"$lte": shift_date},
+        "end_date": {"$gte": shift_date},
+    }).to_list(500)
+    unavailable = {lv["user_id"] for lv in on_leave}
+    schedules = await db.schedules.find({
+        "shift_date": shift_date,
+        "user_id": {"$ne": requester_id},
+        "shift_type": {"$nin": ["off", "leave"]},
+    }, {"_id": 0}).to_list(500)
+    candidates = []
+    for schedule in schedules:
+        if schedule["user_id"] in unavailable:
+            continue
+        if schedule.get("shift_type") == requester_schedule.get("shift_type"):
+            continue
+        candidates.append({
+            "user_id": schedule["user_id"],
+            "user_name": schedule.get("user_name", ""),
+            "avatar_url": schedule.get("avatar_url"),
+            "team": schedule.get("team"),
+            "current_shift": schedule.get("shift_type"),
+            "requested_shift": requester_schedule.get("shift_type"),
+        })
+    return candidates
+
+
+async def _execute_swap(db, swap: dict, admin: dict) -> None:
+    requester_schedule = await db.schedules.find_one({
+        "user_id": swap["requester_id"], "shift_date": swap["shift_date"]
+    })
+    target_schedule = await db.schedules.find_one({
+        "user_id": swap["swap_user_id"], "shift_date": swap["shift_date"]
+    })
+    if not requester_schedule or not target_schedule:
+        raise HTTPException(status_code=409, detail="One of the scheduled duties no longer exists")
+    if requester_schedule.get("shift_type") != swap.get("requester_original_shift") or target_schedule.get("shift_type") != swap.get("swap_user_original_shift"):
+        raise HTTPException(status_code=409, detail="A duty changed after this swap was requested. Cancel it and create a new request.")
+
+    requester_shift = target_schedule["shift_type"]
+    target_shift = requester_schedule["shift_type"]
+    requester_times = SHIFT_TIMES[requester_shift]
+    target_times = SHIFT_TIMES[target_shift]
+    now = datetime.now(timezone.utc)
+
+    await db.schedules.update_one(
+        {"user_id": swap["requester_id"], "shift_date": swap["shift_date"]},
+        {"$set": {
+            "shift_type": requester_shift,
+            "start_time": requester_times[0],
+            "end_time": requester_times[1],
+            "hours": SHIFT_HOURS[requester_shift],
+            "notes": f"Executed swap {swap['id']} with {swap['swap_user_name']}",
+        }},
+    )
+    await db.schedules.update_one(
+        {"user_id": swap["swap_user_id"], "shift_date": swap["shift_date"]},
+        {"$set": {
+            "shift_type": target_shift,
+            "start_time": target_times[0],
+            "end_time": target_times[1],
+            "hours": SHIFT_HOURS[target_shift],
+            "notes": f"Executed swap {swap['id']} with {swap['requester_name']}",
+        }},
+    )
+    await db.attendance.update_one(
+        {"user_id": swap["requester_id"], "attendance_date": swap["shift_date"]},
+        {"$set": {"shift_type": requester_shift, "notes": f"Schedule updated by swap {swap['id']}"}},
+    )
+    await db.attendance.update_one(
+        {"user_id": swap["swap_user_id"], "attendance_date": swap["shift_date"]},
+        {"$set": {"shift_type": target_shift, "notes": f"Schedule updated by swap {swap['id']}"}},
+    )
+    await db.swap_requests.update_one(
+        {"id": swap["id"]},
+        {"$set": {
+            "status": "executed",
+            "admin_id": admin["_id"],
+            "admin_decision_at": now,
+            "executed_at": now,
+            "updated_at": now,
+        }},
+    )
+    await _audit_event(db, "swap", swap["id"], "executed", admin, {
+        "shift_date": swap["shift_date"],
+        "requester_new_shift": requester_shift,
+        "swap_user_new_shift": target_shift,
+    })
+    await realtime.broadcast("schedules", "swap_executed", {"swap_id": swap["id"], "date": swap["shift_date"]})
+    await realtime.broadcast("reports", "swap_executed", {"swap_id": swap["id"]})
+
+
+@app.get("/api/swaps/candidates")
+async def swap_candidates(
+    shift_date: str,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    return await _available_swap_candidates(db, user["_id"], shift_date)
+
+
+@app.post("/api/swaps", response_model=SwapRequest)
+async def create_swap_request(
+    payload: SwapCreate,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if payload.swap_user_id == user["_id"]:
+        raise HTTPException(status_code=400, detail="Select another employee")
+    requester_schedule = await db.schedules.find_one({"user_id": user["_id"], "shift_date": payload.shift_date})
+    target_schedule = await db.schedules.find_one({"user_id": payload.swap_user_id, "shift_date": payload.shift_date})
+    target_user = await db.users.find_one({"_id": payload.swap_user_id, "status": "active"})
+    if not requester_schedule:
+        raise HTTPException(status_code=400, detail="You have no scheduled duty on this date")
+    if not target_schedule or not target_user:
+        raise HTTPException(status_code=400, detail="Selected employee has no available duty on this date")
+    if requester_schedule["shift_type"] in ("off", "leave") or target_schedule["shift_type"] in ("off", "leave"):
+        raise HTTPException(status_code=400, detail="Off or leave duties cannot be swapped")
+    if requester_schedule["shift_type"] == target_schedule["shift_type"]:
+        raise HTTPException(status_code=400, detail="Select an employee from another shift")
+    conflict = await db.swap_requests.find_one({
+        "shift_date": payload.shift_date,
+        "$or": [
+            {"requester_id": {"$in": [user["_id"], payload.swap_user_id]}},
+            {"swap_user_id": {"$in": [user["_id"], payload.swap_user_id]}},
+        ],
+        "status": {"$in": ["pending_employee_approval", "pending_admin_approval"]},
+    })
+    if conflict:
+        raise HTTPException(status_code=409, detail="A pending swap already involves one of these employees on this date")
+
+    swap = SwapRequest(
+        requester_id=user["_id"],
+        requester_name=user["full_name"],
+        swap_user_id=target_user["_id"],
+        swap_user_name=target_user["full_name"],
+        shift_date=payload.shift_date,
+        requester_original_shift=requester_schedule["shift_type"],
+        swap_user_original_shift=target_schedule["shift_type"],
+        reason=payload.reason,
+    )
+    await db.swap_requests.insert_one(swap.dict())
+    await _audit_event(db, "swap", swap.id, "requested", user, swap.dict())
+    await realtime.broadcast("swaps", "requested", {"swap_id": swap.id, "swap_user_id": payload.swap_user_id})
+    return swap
+
+
+@app.get("/api/swaps", response_model=list[SwapRequest])
+async def list_swaps(
+    status_filter: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    query: dict[str, Any] = {}
+    if status_filter:
+        query["status"] = status_filter
+    if user["role"] not in ADMIN_ROLES:
+        query["$or"] = [{"requester_id": user["_id"]}, {"swap_user_id": user["_id"]}]
+    docs = await db.swap_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return [_swap_public(doc) for doc in docs]
+
+
+@app.post("/api/swaps/{swap_id}/employee-action", response_model=SwapRequest)
+async def employee_swap_action(
+    swap_id: str,
+    payload: SwapAction,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    swap = await db.swap_requests.find_one({"id": swap_id})
+    if not swap:
+        raise HTTPException(status_code=404, detail="Swap request not found")
+    if swap["swap_user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the selected employee can respond")
+    if swap["status"] != "pending_employee_approval":
+        raise HTTPException(status_code=400, detail="Swap is not awaiting employee approval")
+    if payload.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="action must be approve or reject")
+    now = datetime.now(timezone.utc)
+    status_value = "pending_admin_approval" if payload.action == "approve" else "rejected"
+    await db.swap_requests.update_one({"id": swap_id}, {"$set": {
+        "status": status_value,
+        "employee_decision_at": now,
+        "employee_notes": payload.notes,
+        "updated_at": now,
+    }})
+    await _audit_event(db, "swap", swap_id, f"employee_{payload.action}", user, {"notes": payload.notes})
+    await realtime.broadcast("swaps", status_value, {"swap_id": swap_id})
+    return _swap_public(await db.swap_requests.find_one({"id": swap_id}, {"_id": 0}))
+
+
+@app.post("/api/swaps/{swap_id}/admin-action", response_model=SwapRequest)
+async def admin_swap_action(
+    swap_id: str,
+    payload: SwapAction,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    swap = await db.swap_requests.find_one({"id": swap_id})
+    if not swap:
+        raise HTTPException(status_code=404, detail="Swap request not found")
+    if swap["status"] != "pending_admin_approval":
+        raise HTTPException(status_code=400, detail="Swap is not awaiting admin approval")
+    if payload.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="action must be approve or reject")
+    if payload.action == "approve":
+        await _execute_swap(db, swap, admin)
+    else:
+        now = datetime.now(timezone.utc)
+        await db.swap_requests.update_one({"id": swap_id}, {"$set": {
+            "status": "rejected",
+            "admin_id": admin["_id"],
+            "admin_decision_at": now,
+            "admin_notes": payload.notes,
+            "updated_at": now,
+        }})
+        await _audit_event(db, "swap", swap_id, "admin_rejected", admin, {"notes": payload.notes})
+        await realtime.broadcast("swaps", "rejected", {"swap_id": swap_id})
+    return _swap_public(await db.swap_requests.find_one({"id": swap_id}, {"_id": 0}))
+
+
+@app.post("/api/swaps/{swap_id}/cancel", response_model=SwapRequest)
+async def cancel_swap(
+    swap_id: str,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    swap = await db.swap_requests.find_one({"id": swap_id})
+    if not swap or swap["requester_id"] != user["_id"]:
+        raise HTTPException(status_code=404, detail="Swap request not found")
+    if swap["status"] not in ("pending_employee_approval", "pending_admin_approval"):
+        raise HTTPException(status_code=400, detail="Swap can no longer be cancelled")
+    now = datetime.now(timezone.utc)
+    await db.swap_requests.update_one({"id": swap_id}, {"$set": {"status": "cancelled", "updated_at": now}})
+    await _audit_event(db, "swap", swap_id, "cancelled", user)
+    await realtime.broadcast("swaps", "cancelled", {"swap_id": swap_id})
+    return _swap_public(await db.swap_requests.find_one({"id": swap_id}, {"_id": 0}))
+
 # ---------------------------------------------------------------------------
 # Leaves
 # ---------------------------------------------------------------------------
@@ -1319,6 +1619,8 @@ async def _check_coverage(db, dates: list[str], excluding_user: str) -> dict:
         on_leave_ids = {lv["user_id"] for lv in leaves}
 
         counts = {"morning": 0, "afternoon": 0, "night": 0}
+        affected_schedule = next((s for s in schedules if s["user_id"] == excluding_user), None)
+        affected_shift = (affected_schedule or {}).get("shift_type")
         for s in schedules:
             if s["user_id"] == excluding_user:
                 continue
@@ -1326,8 +1628,9 @@ async def _check_coverage(db, dates: list[str], excluding_user: str) -> dict:
                 continue
             if s["shift_type"] in counts:
                 counts[s["shift_type"]] += 1
-        ok = counts["morning"] >= 3 and counts["afternoon"] >= 2 and counts["night"] >= 2
-        coverage[d] = {**counts, "ok": ok}
+        minimum = COVERAGE_MIN.get(affected_shift, 0)
+        ok = affected_shift not in counts or counts[affected_shift] >= minimum
+        coverage[d] = {**counts, "affected_shift": affected_shift, "required": minimum, "ok": ok}
     return coverage
 
 
@@ -1353,13 +1656,18 @@ async def apply_leave(
         coverage = await _check_coverage(db, dates, user["_id"])
         bad = [d for d, c in coverage.items() if not c["ok"]]
         if bad:
+            candidate_map = {}
+            for bad_date in bad:
+                candidate_map[bad_date] = await _available_swap_candidates(db, user["_id"], bad_date)
             raise HTTPException(
-                status_code=400,
+                status_code=409,
                 detail={
                     "error": "coverage_insufficient",
-                    "message": "Minimum coverage (3 morning, 2 afternoon, 2 night) cannot be met on these dates. Use Emergency Leave.",
+                    "message": "Normal leave would reduce the shift below minimum manpower.",
                     "dates": bad,
                     "coverage": coverage,
+                    "options": ["emergency_leave", "swap_request"],
+                    "swap_candidates": candidate_map,
                 },
             )
 
@@ -1440,7 +1748,10 @@ async def act_on_leave(
                 )
                 await _record_comp_off_usage(db, leave, comp_off_deduction, admin["full_name"])
         await _apply_approved_leave_to_schedule(db, leave)
+        await _audit_event(db, "leave", leave_id, "approved", admin, {"leave_type": leave["leave_type"], "days": leave["days"], "notes": payload.notes})
 
+    if new_status == "rejected":
+        await _audit_event(db, "leave", leave_id, "rejected", admin, {"notes": payload.notes})
     leave = await db.leaves.find_one({"id": leave_id}, {"_id": 0})
     await realtime.broadcast("leaves", new_status, {"leave_id": leave_id, "user_id": leave["user_id"]})
     if new_status == "approved":
@@ -1463,7 +1774,7 @@ async def act_on_leave(
 # ---------------------------------------------------------------------------
 @app.get("/api/dashboard")
 async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
-    today = date.today().isoformat()
+    today = local_today_str()
     today_schedule = await db.schedules.find_one({"user_id": user["_id"], "shift_date": today}, {"_id": 0})
     today_attendance_docs = await db.attendance.find(
         {
@@ -1484,6 +1795,31 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
     today_sick = len({lv["user_id"] for lv in today_leave_docs if lv.get("leave_type") == "sick"})
     today_comp_off = len({lv["user_id"] for lv in today_leave_docs if lv.get("leave_type") == "comp_off"})
     today_on_leave = len({lv["user_id"] for lv in today_leave_docs})
+    today_schedules = await db.schedules.find({
+        "shift_date": today,
+        "shift_type": {"$nin": ["off", "leave"]},
+    }, {"_id": 0}).sort([("start_time", 1), ("user_name", 1)]).to_list(1000)
+    today_attendance_by_user = {
+        item["user_id"]: item
+        for item in await db.attendance.find({"attendance_date": today}, {"_id": 0}).to_list(1000)
+    }
+    today_duty_holders = []
+    for schedule in today_schedules:
+        attendance_item = today_attendance_by_user.get(schedule["user_id"])
+        is_present = bool(attendance_item and attendance_item.get("status") in ("present", "late", "half_day"))
+        today_duty_holders.append({
+            "user_id": schedule["user_id"],
+            "user_name": schedule.get("user_name", ""),
+            "avatar_url": schedule.get("avatar_url"),
+            "team": schedule.get("team"),
+            "role": schedule.get("role"),
+            "shift_type": schedule.get("shift_type"),
+            "start_time": schedule.get("start_time", ""),
+            "end_time": schedule.get("end_time", ""),
+            "attendance_status": attendance_item.get("status") if attendance_item else None,
+            "clock_in": attendance_item.get("clock_in") if attendance_item else None,
+            "is_present": is_present,
+        })
     # this month attendance summary
     start_month = date.today().replace(day=1).isoformat()
     att_docs = await db.attendance.find(
@@ -1500,6 +1836,7 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
         "today_sick": today_sick,
         "today_comp_off": today_comp_off,
         "today_on_leave": today_on_leave,
+        "today_duty_holders": today_duty_holders,
         "hours_this_month": round(hours_this_month, 2),
         "present_days_this_month": present_days,
         "pending_leaves": pending_leaves,
@@ -1527,6 +1864,7 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
             "today_sick": today_sick,
             "today_comp_off": today_comp_off,
             "today_on_leave": today_on_leave,
+            "today_duty_holders": today_duty_holders,
         }
     return summary
 
@@ -1597,6 +1935,10 @@ async def calendar_month(
             {"status": {"$in": ["approved", "pending"]}},
         ]
     }, {"_id": 0}).to_list(500)
+    swaps = await db.swap_requests.find({
+        "shift_date": {"$gte": start_str, "$lte": end_str},
+        "status": {"$ne": "cancelled"},
+    }, {"_id": 0}).to_list(1000)
     attendance = await db.attendance.find(
         {"attendance_date": {"$gte": start_str, "$lte": end_str}}, {"_id": 0}
     ).sort([("attendance_date", 1), ("user_name", 1)]).to_list(10000)
@@ -1611,6 +1953,7 @@ async def calendar_month(
             "shifts": {k: [] for k in ["morning", "afternoon", "night", "admin", "ega",
                                        "sat_day", "sat_night", "sun_day", "sun_night", "off", "leave"]},
             "leaves": [],
+            "swaps": [],
             "attendance": [],
             "roster": [],
             "roster_summary": {"scheduled": 0, "finished": 0, "clocked_in": 0, "marked": 0, "missing": 0},
@@ -1685,6 +2028,23 @@ async def calendar_month(
                             days[d]["pending_leave_impact"][sk] += 1
                             break
             cur += timedelta(days=1)
+
+    # Bucket swaps by duty date.
+    for swap in swaps:
+        d = swap.get("shift_date")
+        if d not in days:
+            continue
+        days[d]["swaps"].append({
+            "id": swap["id"],
+            "requester_id": swap["requester_id"],
+            "requester_name": swap["requester_name"],
+            "swap_user_id": swap["swap_user_id"],
+            "swap_user_name": swap["swap_user_name"],
+            "requester_original_shift": swap["requester_original_shift"],
+            "swap_user_original_shift": swap["swap_user_original_shift"],
+            "status": swap["status"],
+            "reason": swap.get("reason", ""),
+        })
 
     # Bucket attendance by marked date so the command center reflects real logs.
     attendance_statuses = {"present", "late", "absent", "half_day"}
@@ -1824,6 +2184,8 @@ async def calendar_month(
     active_users_count = await db.users.count_documents({"status": "active"})
     approved_leaves_total = sum(1 for lv in leaves if lv["status"] == "approved")
     pending_leaves_total = sum(1 for lv in leaves if lv["status"] == "pending")
+    pending_swaps_total = sum(1 for swap in swaps if swap["status"] in ("pending_employee_approval", "pending_admin_approval"))
+    executed_swaps_total = sum(1 for swap in swaps if swap["status"] == "executed")
     marked_attendance_total = len(attendance)
 
     return {
@@ -1836,6 +2198,8 @@ async def calendar_month(
             "total_scheduled_hours": round(total_scheduled_hours, 2),
             "approved_leaves": approved_leaves_total,
             "pending_leaves": pending_leaves_total,
+            "pending_swaps": pending_swaps_total,
+            "executed_swaps": executed_swaps_total,
             "marked_attendance": marked_attendance_total,
             "critical_days": monthly_critical,
             "warn_days": monthly_warn,
@@ -2063,6 +2427,12 @@ async def export_report_data(
         {"start_date": {"$lte": end_date}, "end_date": {"$gte": start_date}},
         {"_id": 0},
     ).sort([("start_date", 1), ("user_name", 1)]).to_list(5000)
+    swaps = await db.swap_requests.find(
+        {"shift_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}
+    ).sort([("shift_date", 1), ("requester_name", 1)]).to_list(5000)
+    comp_off_grants = await db.comp_off_grants.find(
+        {"earned_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}
+    ).sort([("earned_date", 1), ("user_name", 1)]).to_list(5000)
 
     user_rows = []
     for user_doc in users:
@@ -2091,6 +2461,7 @@ async def export_report_data(
             "annual_balance": user_doc.get("annual_leave_balance", 0),
             "sick_balance": user_doc.get("sick_leave_balance", 0),
             "comp_off_balance": user_doc.get("comp_off_balance", 0),
+            "swap_duty_days": sum(1 for swap in swaps if swap.get("status") == "executed" and uid in (swap.get("requester_id"), swap.get("swap_user_id"))),
         })
 
     return {
@@ -2099,4 +2470,212 @@ async def export_report_data(
         "attendance": attendance,
         "schedules": schedules,
         "leaves": leaves,
+        "swaps": swaps,
+        "comp_off_grants": comp_off_grants,
     }
+
+@app.get("/api/reports/export.xlsx")
+async def export_management_workbook(
+    start_date: str,
+    end_date: str,
+    admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+):
+    """Generate a management-ready Excel workbook from live operational data."""
+    from openpyxl import Workbook
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+    if end < start or (end - start).days > 370:
+        raise HTTPException(status_code=400, detail="Export range must be between 1 and 370 days")
+
+    users = await db.users.find({"status": "active"}).sort("full_name", 1).to_list(1000)
+    attendance = await db.attendance.find({"attendance_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(30000)
+    schedules = await db.schedules.find({"shift_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(30000)
+    leaves = await db.leaves.find({"start_date": {"$lte": end_date}, "end_date": {"$gte": start_date}}, {"_id": 0}).to_list(10000)
+    swaps = await db.swap_requests.find({"shift_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(10000)
+    comp_off = await db.comp_off_grants.find({}, {"_id": 0}).to_list(10000)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    colors_x = {
+        "header": "111827", "header_text": "FFFFFF", "duty": "F8FAFC",
+        "leave": "FECACA", "vacation": "BFDBFE", "comp": "BBF7D0",
+        "swap": "E9D5FF", "pending": "FDE68A", "danger": "EF4444", "green": "10B981",
+    }
+    thin = Side(style="thin", color="D1D5DB")
+
+    def setup_sheet(ws, headers):
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.fill = PatternFill("solid", fgColor=colors_x["header"])
+            cell.font = Font(color=colors_x["header_text"], bold=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = Border(bottom=thin)
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+        ws.sheet_view.showGridLines = False
+
+    def autofit(ws, maximum=32):
+        for column in ws.columns:
+            letter = get_column_letter(column[0].column)
+            width = min(maximum, max(10, max(len(str(cell.value or "")) for cell in column) + 2))
+            ws.column_dimensions[letter].width = width
+
+    user_map = {u["_id"]: u for u in users}
+    att_by_key = {(a["user_id"], a["attendance_date"]): a for a in attendance}
+    sched_by_key = {(s["user_id"], s["shift_date"]): s for s in schedules}
+    approved_leaves = [lv for lv in leaves if lv.get("status") == "approved"]
+    date_list = [(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+
+    summary_rows = []
+    for u in users:
+        uid = u["_id"]
+        user_att = [a for a in attendance if a["user_id"] == uid]
+        user_sched = [s for s in schedules if s["user_id"] == uid]
+        user_leaves = [lv for lv in approved_leaves if lv["user_id"] == uid]
+        executed_swaps = [s for s in swaps if s.get("status") == "executed" and uid in (s.get("requester_id"), s.get("swap_user_id"))]
+        summary_rows.append([
+            u.get("full_name", ""), uid, u.get("team") or "", u.get("role", ""), u.get("default_shift") or "",
+            sum(1 for s in user_sched if s.get("shift_type") not in ("off", "leave")),
+            sum(lv.get("days", 0) for lv in user_leaves),
+            sum(lv.get("days", 0) for lv in user_leaves if lv.get("leave_type") == "annual"),
+            sum(lv.get("days", 0) for lv in user_leaves if lv.get("leave_type") == "comp_off"),
+            len(executed_swaps),
+            sum(1 for a in user_att if a.get("status") == "absent"),
+            round(sum(float(a.get("hours_worked", 0) or 0) for a in user_att), 2),
+        ])
+
+    dash = wb.create_sheet("Dashboard")
+    dash.sheet_view.showGridLines = False
+    dash["A1"] = "WAREHOUSE WORKFORCE DASHBOARD"
+    dash["A1"].font = Font(size=20, bold=True, color="FFFFFF")
+    dash["A1"].fill = PatternFill("solid", fgColor=colors_x["header"])
+    dash.merge_cells("A1:F2")
+    dash["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    metrics = [
+        ("Total Employees", len(users)),
+        ("Total Duty Days", sum(r[5] for r in summary_rows)),
+        ("Total Leave Days", sum(r[6] for r in summary_rows)),
+        ("Vacation Days", sum(r[7] for r in summary_rows)),
+        ("Comp-Off Days", sum(r[8] for r in summary_rows)),
+        ("Pending Requests", sum(1 for lv in leaves if lv.get("status") == "pending") + sum(1 for s in swaps if str(s.get("status", "")).startswith("pending"))),
+        ("Approved Swaps", sum(1 for s in swaps if s.get("status") == "executed")),
+    ]
+    for idx, (label, value) in enumerate(metrics, start=4):
+        dash.cell(idx, 1, label).font = Font(bold=True)
+        dash.cell(idx, 2, value)
+        dash.cell(idx, 1).fill = PatternFill("solid", fgColor="E5E7EB")
+        dash.cell(idx, 2).fill = PatternFill("solid", fgColor="F9FAFB")
+    dash["D4"] = "Metric"
+    dash["E4"] = "Value"
+    for cell in dash[4][3:5]:
+        cell.fill = PatternFill("solid", fgColor=colors_x["header"])
+        cell.font = Font(color="FFFFFF", bold=True)
+    for i, (label, value) in enumerate(metrics[:5], start=5):
+        dash.cell(i, 4, label)
+        dash.cell(i, 5, value)
+    chart = BarChart()
+    chart.title = "Workforce Summary"
+    chart.y_axis.title = "Count"
+    chart.add_data(Reference(dash, min_col=5, min_row=4, max_row=9), titles_from_data=True)
+    chart.set_categories(Reference(dash, min_col=4, min_row=5, max_row=9))
+    chart.height = 8
+    chart.width = 14
+    dash.add_chart(chart, "D11")
+    dash.column_dimensions["A"].width = 28
+    dash.column_dimensions["B"].width = 16
+
+    summary = wb.create_sheet("Monthly Attendance Summary")
+    setup_sheet(summary, ["Employee", "Employee ID", "Team", "Role", "Shift", "Duty Days", "Leave Days", "Vacation Days", "Comp-Off Days", "Swap Duty Days", "Absence Days", "Total Hours"])
+    for row in summary_rows:
+        summary.append(row)
+    autofit(summary)
+
+    calendar = wb.create_sheet("Duty Calendar")
+    setup_sheet(calendar, ["Employee", "Employee ID", "Team", *date_list])
+    for u in users:
+        uid = u["_id"]
+        row = [u.get("full_name", ""), uid, u.get("team") or ""]
+        for d in date_list:
+            schedule = sched_by_key.get((uid, d))
+            attendance_item = att_by_key.get((uid, d))
+            value = ""
+            fill = colors_x["duty"]
+            leave = next((lv for lv in approved_leaves if lv["user_id"] == uid and lv["start_date"] <= d <= lv["end_date"]), None)
+            if leave:
+                lt = leave.get("leave_type")
+                value = {"annual": "VACATION", "comp_off": "COMP OFF", "sick": "SICK", "emergency": "EMERGENCY"}.get(lt, "LEAVE")
+                fill = colors_x["vacation"] if lt == "annual" else colors_x["comp"] if lt == "comp_off" else colors_x["leave"]
+            elif schedule:
+                value = str(schedule.get("shift_type", "")).upper()
+                if attendance_item:
+                    value += f" | {str(attendance_item.get('status', '')).upper()}"
+            row.append(value)
+        calendar.append(row)
+        for col in range(4, 4 + len(date_list)):
+            value = str(calendar.cell(calendar.max_row, col).value or "")
+            fill = colors_x["duty"]
+            if "VACATION" in value: fill = colors_x["vacation"]
+            elif "COMP OFF" in value: fill = colors_x["comp"]
+            elif any(x in value for x in ("SICK", "EMERGENCY", "LEAVE")): fill = colors_x["leave"]
+            calendar.cell(calendar.max_row, col).fill = PatternFill("solid", fgColor=fill)
+            calendar.cell(calendar.max_row, col).alignment = Alignment(wrap_text=True, horizontal="center")
+    calendar.freeze_panes = "D2"
+    calendar.column_dimensions["A"].width = 24
+    calendar.column_dimensions["B"].width = 38
+    calendar.column_dimensions["C"].width = 10
+    for col in range(4, 4 + len(date_list)):
+        calendar.column_dimensions[get_column_letter(col)].width = 14
+
+    leave_ws = wb.create_sheet("Leave & Vacation Report")
+    setup_sheet(leave_ws, ["Employee", "Leave Type", "From Date", "To Date", "Days", "Status", "Reason", "Approved By"])
+    for lv in leaves:
+        leave_ws.append([lv.get("user_name"), lv.get("leave_type"), lv.get("start_date"), lv.get("end_date"), lv.get("days"), lv.get("status"), lv.get("reason"), lv.get("approved_by")])
+        fill = colors_x["pending"] if lv.get("status") == "pending" else colors_x["vacation"] if lv.get("leave_type") == "annual" else colors_x["comp"] if lv.get("leave_type") == "comp_off" else colors_x["leave"]
+        for cell in leave_ws[leave_ws.max_row]: cell.fill = PatternFill("solid", fgColor=fill)
+    autofit(leave_ws)
+
+    comp_ws = wb.create_sheet("Comp-Off Report")
+    setup_sheet(comp_ws, ["Employee", "Earned Date", "Used Date", "Days", "Overtime Hours", "Reason", "Status", "Balance"])
+    for item in comp_off:
+        is_usage = str(item.get("source_id", "")).startswith("leave-comp-off:")
+        user_doc = user_map.get(item.get("user_id"), {})
+        comp_ws.append([item.get("user_name"), "" if is_usage else item.get("earned_date"), item.get("earned_date") if is_usage else "", item.get("days"), item.get("overtime_hours", 0), item.get("reason"), "USED" if is_usage else "EARNED", user_doc.get("comp_off_balance", 0)])
+    autofit(comp_ws)
+
+    swap_ws = wb.create_sheet("Swap Report")
+    setup_sheet(swap_ws, ["Requested By", "Swap Employee", "Date", "Original Shift", "Swap Shift", "Employee Approval", "Admin Approval", "Final Status", "Execution Date", "Reason"])
+    for swap in swaps:
+        status_value = swap.get("status", "")
+        swap_ws.append([
+            swap.get("requester_name"), swap.get("swap_user_name"), swap.get("shift_date"), swap.get("requester_original_shift"), swap.get("swap_user_original_shift"),
+            "APPROVED" if status_value in ("pending_admin_approval", "executed") else "PENDING" if status_value == "pending_employee_approval" else "REJECTED",
+            "APPROVED" if status_value == "executed" else "PENDING" if status_value == "pending_admin_approval" else "-",
+            status_value, str(swap.get("executed_at") or ""), swap.get("reason"),
+        ])
+        fill = colors_x["swap"] if status_value == "executed" else colors_x["pending"] if status_value.startswith("pending") else colors_x["leave"]
+        for cell in swap_ws[swap_ws.max_row]: cell.fill = PatternFill("solid", fgColor=fill)
+    autofit(swap_ws)
+
+    raw = wb.create_sheet("Raw Attendance Data")
+    setup_sheet(raw, ["Date", "Employee", "Employee ID", "Status", "Clock In", "Clock Out", "Hours", "Shift", "Notes", "Marked By"])
+    for item in attendance:
+        raw.append([item.get("attendance_date"), item.get("user_name"), item.get("user_id"), item.get("status"), item.get("clock_in"), item.get("clock_out"), item.get("hours_worked"), item.get("shift_type"), item.get("notes"), item.get("marked_by")])
+    autofit(raw)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"warehouse-management-{start_date}-to-{end_date}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

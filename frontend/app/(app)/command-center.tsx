@@ -19,6 +19,7 @@ type DayCell = {
   weekday: number;
   shifts: Record<string, { user_id: string; user_name: string; start_time: string; end_time: string }[]>;
   leaves: { user_id: string; user_name: string; leave_type: string; status: string }[];
+  swaps: { id: string; requester_id: string; requester_name: string; swap_user_id: string; swap_user_name: string; requester_original_shift: string; swap_user_original_shift: string; status: string; reason: string }[];
   attendance: {
     user_id: string;
     user_name: string;
@@ -60,6 +61,8 @@ type CalendarData = {
     total_scheduled_hours: number;
     approved_leaves: number;
     pending_leaves: number;
+    pending_swaps: number;
+    executed_swaps: number;
     marked_attendance: number;
     critical_days: number;
     warn_days: number;
@@ -171,6 +174,16 @@ export default function CommandCenter() {
     }
   };
 
+
+  const actOnSwap = async (swapId: string, action: "approve" | "reject") => {
+    try {
+      await api.post(`/swaps/${swapId}/admin-action`, { action });
+      setSelectedDay(null);
+      await load();
+    } catch (e) {
+      Alert.alert("Swap action failed", errMsg(e));
+    }
+  };
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
@@ -211,8 +224,8 @@ export default function CommandCenter() {
             </View>
             <View style={styles.minRow}>
               <Text style={styles.minTxt}>
-                MIN COVERAGE: <Text style={{ color: colors.morning }}>3 morning</Text> ·{" "}
-                <Text style={{ color: colors.afternoon }}>2 afternoon</Text> ·{" "}
+                MIN COVERAGE: <Text style={{ color: colors.morning }}>3 morning</Text> Â·{" "}
+                <Text style={{ color: colors.afternoon }}>2 afternoon</Text> Â·{" "}
                 <Text style={{ color: colors.night }}>2 night</Text>
               </Text>
             </View>
@@ -256,7 +269,8 @@ export default function CommandCenter() {
                     const bg = isCritical ? "rgba(255,59,48,0.10)" : isWarn ? "rgba(255,159,10,0.10)" : "rgba(20,20,20,0.96)";
                     const dayNum = parseInt(cell.date.slice(-2), 10);
                     const statusText = isCritical ? "LOW" : isWarn ? "AT MIN" : "FULL";
-                    return (
+
+  return (
                       <TouchableOpacity
                         key={cell.date}
                         testID={`cc-day-${dayNum}`}
@@ -277,6 +291,7 @@ export default function CommandCenter() {
                         </View>
                         <ShiftBoard day={cell} minimum={data?.minimum_coverage} compact={isMobileCalendar} />
                         <UnavailableStrip day={cell} compact={isMobileCalendar} />
+                        {cell.swaps?.length > 0 && <Text style={styles.swapCellBadge}>â†” {cell.swaps.length} SWAP</Text>}
                         {cell.pending_status !== "ok" && !isMobileCalendar && (
                           <View style={styles.pendingRiskRow}>
                             <Ionicons name="hourglass" size={10} color={colors.warning} />
@@ -318,7 +333,7 @@ export default function CommandCenter() {
                           : selectedDay.status === "warn" ? colors.warning : colors.success,
                       },
                     ]}>
-                      {selectedDay.status === "critical" ? "⚠ BELOW MINIMUM COVERAGE"
+                      {selectedDay.status === "critical" ? "âš  BELOW MINIMUM COVERAGE"
                         : selectedDay.status === "warn" ? "AT MINIMUM" : "FULLY COVERED"}
                     </Text>
                   </View>
@@ -354,6 +369,28 @@ export default function CommandCenter() {
                   </>
                 )}
 
+
+                {selectedDay.swaps?.length > 0 && (
+                  <>
+                    <Text style={[styles.modalSection, { color: "#C084FC" }]}>SWAP REQUESTS ({selectedDay.swaps.length})</Text>
+                    {selectedDay.swaps.map(swap => (
+                      <View key={swap.id} style={[styles.calendarSwapRow, { backgroundColor: theme.surfaceHi, borderColor: "#7C3AED" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.entryName, { color: theme.text }]}>{swap.requester_name} â†” {swap.swap_user_name}</Text>
+                          <Text style={styles.swapRouteText}>{swap.requester_original_shift.toUpperCase()} â†” {swap.swap_user_original_shift.toUpperCase()}</Text>
+                          <Text style={[styles.entryTime, { color: theme.muted }]}>{swap.reason}</Text>
+                          <Text style={[styles.swapCalendarStatus, { color: swap.status === "executed" ? colors.success : colors.warning }]}>{swap.status.replace(/_/g, " ").toUpperCase()}</Text>
+                        </View>
+                        {isAdmin && swap.status === "pending_admin_approval" && (
+                          <View style={styles.calendarSwapActions}>
+                            <TouchableOpacity style={[styles.calendarSwapBtn, { backgroundColor: colors.danger }]} onPress={() => actOnSwap(swap.id, "reject")}><Ionicons name="close" size={15} color="#fff" /></TouchableOpacity>
+                            <TouchableOpacity style={[styles.calendarSwapBtn, { backgroundColor: colors.success }]} onPress={() => actOnSwap(swap.id, "approve")}><Ionicons name="checkmark" size={15} color="#fff" /></TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </>
+                )}
                 {/* Combined roster log */}
                 {selectedDay.roster?.length > 0 && (
                   <>
@@ -369,17 +406,18 @@ export default function CommandCenter() {
                     {selectedDay.roster.map((row, i) => {
                       const state = rosterState(row);
                       const sc = shiftColor(row.shift_type || "");
-                      return (
+
+  return (
                         <View key={`${row.user_id}-${row.shift_type}-${i}`} style={[styles.rosterRow, { borderLeftColor: state.color, backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.entryName, { color: theme.text }]}>{row.user_name}</Text>
                             <Text style={[styles.entryShift, { color: sc.c }]}>
                               {shiftLabel[row.shift_type || ""] || row.shift_type || "Unscheduled"}
-                              {row.start_time ? ` · ${row.start_time}-${row.end_time}` : ""}
+                              {row.start_time ? ` Â· ${row.start_time}-${row.end_time}` : ""}
                             </Text>
                             <Text style={styles.entryTime}>
                               Logged: {row.clock_in || "--"} - {row.clock_out || "--"}
-                              {row.hours_worked ? ` · ${row.hours_worked}h` : ""}
+                              {row.hours_worked ? ` Â· ${row.hours_worked}h` : ""}
                             </Text>
                           </View>
                           <View style={[styles.logPill, { borderColor: state.color }]}>
@@ -402,12 +440,13 @@ export default function CommandCenter() {
                         att.status === "present" ? colors.success
                           : att.status === "late" ? colors.warning
                           : att.status === "absent" ? colors.danger : colors.textSecondary;
-                      return (
+
+  return (
                         <View key={`${att.user_id}-${i}`} style={[styles.attendanceRow, { borderLeftColor: statusColor, backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.entryName, { color: theme.text }]}>{att.user_name}</Text>
                             <Text style={[styles.entryShift, { color: statusColor }]}>
-                              {att.status.toUpperCase()} · {att.hours_worked || 0}h
+                              {att.status.toUpperCase()} Â· {att.hours_worked || 0}h
                             </Text>
                             {(att.clock_in || att.clock_out) && (
                               <Text style={styles.entryTime}>{att.clock_in || "--"} - {att.clock_out || "--"}</Text>
@@ -447,7 +486,8 @@ export default function CommandCenter() {
                 {/* Shifts */}
                 {Object.entries(selectedDay.shifts).filter(([, arr]) => arr.length > 0).map(([sk, arr]) => {
                   const sc = shiftColor(sk);
-                  return (
+
+  return (
                     <View key={sk}>
                       <Text style={[styles.modalSection, { color: sc.c }]}>
                         {shiftLabel[sk] || sk.toUpperCase()} ({arr.length})
@@ -457,7 +497,7 @@ export default function CommandCenter() {
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.entryName, { color: theme.text }]}>{e.user_name}</Text>
                             {e.start_time && (
-                              <Text style={styles.entryTime}>{e.start_time} – {e.end_time}</Text>
+                              <Text style={styles.entryTime}>{e.start_time} â€“ {e.end_time}</Text>
                             )}
                           </View>
                           <Ionicons name="person" size={16} color={colors.textMuted} />
@@ -505,7 +545,8 @@ export default function CommandCenter() {
               {LEAVE_TYPES.map(t => {
                 const selected = leaveType === t.key;
                 const c = leaveColor(t.key);
-                return (
+
+  return (
                   <TouchableOpacity
                     key={t.key}
                     testID={`cc-leave-type-${t.key}`}
@@ -584,6 +625,7 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
 function ShiftBoard({ day, minimum, compact }: { day: DayCell; minimum?: CalendarData["minimum_coverage"]; compact?: boolean }) {
   const rows = shiftRowsForDay(day, minimum);
   const visibleNames = compact ? 1 : 3;
+
   return (
     <View style={styles.shiftBoard}>
       {rows.map(row => (
@@ -624,6 +666,7 @@ function UnavailableStrip({ day, compact }: { day: DayCell; compact?: boolean })
     ...day.leaves.map(l => ({ user_id: l.user_id, user_name: l.user_name, reason: leaveLabel[l.leave_type] || "Leave" })),
   ];
   const unique = Array.from(new Map(offPeople.map(p => [p.user_id, p])).values());
+
   return (
     <View style={styles.unavailableRow}>
       {unique.slice(0, compact ? 1 : 2).map(p => (
@@ -680,6 +723,7 @@ function rosterState(row: DayCell["roster"][number]) {
 }
 
 function RosterSummary({ label, value, color }: any) {
+
   return (
     <View style={styles.rosterSummaryItem}>
       <Text style={[styles.rosterSummaryValue, { color }]}>{value}</Text>
@@ -690,6 +734,7 @@ function RosterSummary({ label, value, color }: any) {
 
 function CompareCell({ icon, label, value, color }: any) {
   const { theme } = useThemeMode();
+
   return (
     <View style={[styles.compareCell, { backgroundColor: theme.surfaceHi, borderColor: theme.border, borderWidth: 1 }]} testID={`cc-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <Ionicons name={icon} size={18} color={color} />
@@ -700,6 +745,7 @@ function CompareCell({ icon, label, value, color }: any) {
 }
 
 function LegendItem({ color, label }: any) {
+
   return (
     <View style={styles.legendItem}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -710,6 +756,7 @@ function LegendItem({ color, label }: any) {
 
 function CoverageItem({ label, count, min, color }: any) {
   const ok = count >= min;
+
   return (
     <View style={styles.covItem}>
       <View style={[styles.covCircle, { borderColor: color, backgroundColor: ok ? `${color}22` : "transparent" }]}>
@@ -726,6 +773,7 @@ function CoverageItem({ label, count, min, color }: any) {
 
 function CoverageMini({ label, count, min, color }: any) {
   const low = count < min;
+
   return (
     <View style={[styles.coverageMini, { borderColor: low ? colors.danger : color, backgroundColor: low ? "rgba(255,59,48,0.08)" : "rgba(255,255,255,0.03)" }]}>
       <Text style={[styles.coverageMiniLabel, { color: low ? colors.danger : colors.textPrimary }]}>{label}</Text>
@@ -742,6 +790,7 @@ function CoverageMini({ label, count, min, color }: any) {
 }
 
 function FooterStat({ icon, label, value, color }: any) {
+
   return (
     <View style={styles.footerStat}>
       <Ionicons name={icon} size={12} color={color} />
@@ -752,7 +801,12 @@ function FooterStat({ icon, label, value, color }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#05070A" },
+  swapCellBadge: { color: "#C084FC", fontSize: 7, fontWeight: "900", textAlign: "center", marginTop: 4 },
+  calendarSwapRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderLeftWidth: 3, borderRadius: 6, padding: 10, marginBottom: 7 },
+  swapRouteText: { color: "#C084FC", fontSize: 11, fontWeight: "900", marginTop: 3 },
+  swapCalendarStatus: { fontSize: 9, fontWeight: "900", marginTop: 4 },
+  calendarSwapActions: { flexDirection: "row", gap: 6, marginLeft: 8 },
+  calendarSwapBtn: { width: 34, height: 34, borderRadius: 8, alignItems: "center", justifyContent: "center" },  container: { flex: 1, backgroundColor: "#05070A" },
   header: { flexDirection: "row", alignItems: "center", padding: 20, paddingBottom: 10, gap: 12 },
   backBtn: {
     width: 48, height: 48, alignItems: "center", justifyContent: "center",

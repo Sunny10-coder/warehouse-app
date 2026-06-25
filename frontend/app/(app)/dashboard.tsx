@@ -13,6 +13,7 @@ import { appTheme, colors, shiftLabel, shiftColor, roleLabel } from "@/src/theme
 import { useThemeMode } from "@/src/theme-context";
 import { SectionRow } from "@/src/components/SectionRow";
 import { StaffTile } from "@/src/components/StaffTile";
+import { ThemeSwitch } from "@/src/components/ThemeSwitch";
 
 type DashboardData = {
   today_schedule: any;
@@ -20,6 +21,7 @@ type DashboardData = {
   today_sick: number;
   today_comp_off: number;
   today_on_leave: number;
+  today_duty_holders: any[];
   hours_this_month: number;
   present_days_this_month: number;
   pending_leaves: number;
@@ -35,6 +37,7 @@ type DashboardData = {
     today_sick: number;
     today_comp_off: number;
     today_on_leave: number;
+  today_duty_holders: any[];
   };
 };
 
@@ -46,7 +49,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [todaySchedules, setTodaySchedules] = useState<any[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<any[]>([]);
 
   const today = new Date();
@@ -57,15 +59,13 @@ export default function Dashboard() {
       const r = await api.get<DashboardData>("/dashboard");
       setData(r.data);
       setError(null);
-      // Fetch staff + today's schedules for the tiles
-      try {
-        const [usersRes, schedRes] = await Promise.all([
-          api.get("/users"),
-          api.get("/schedules", { params: { start: todayStr, end: todayStr } }),
-        ]);
-        setStaffList(usersRes.data || []);
-        setTodaySchedules(schedRes.data || []);
-      } catch { /* non-critical */ }
+      // Admin-only directory data is used for the off-duty rail. Live duty holders come from /dashboard.
+      if (isAdmin) {
+        try {
+          const usersRes = await api.get("/users", { params: { status_filter: "active" } });
+          setStaffList(usersRes.data || []);
+        } catch { /* non-critical */ }
+      }
       // Fetch pending leaves for admin
       try {
         const lvRes = await api.get("/leaves", { params: { status_filter: "pending" } });
@@ -76,7 +76,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [todayStr]);
+  }, [todayStr, isAdmin]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useRealtimeRefresh(load, ["users", "schedules", "attendance", "leaves"]);
@@ -89,17 +89,9 @@ export default function Dashboard() {
   const onLeaveToday = data?.admin?.today_on_leave ?? data?.today_on_leave ?? 0;
   const attendanceRate = totalEmployees > 0 ? Math.min(100, Math.round((presentToday / totalEmployees) * 100)) : 0;
 
-  // Build staff tile data: merge users with today's schedule
-  const schedByUser = new Map<string, any>();
-  todaySchedules.forEach(s => schedByUser.set(s.user_id, s));
-
-  const activeStaff = staffList.filter(u => u.status === "active");
-  const staffOnShift = activeStaff
-    .map(u => ({ ...u, sched: schedByUser.get(u.id) }))
-    .filter(u => u.sched && u.sched.shift_type !== "off" && u.sched.shift_type !== "leave");
-  const staffOff = activeStaff
-    .map(u => ({ ...u, sched: schedByUser.get(u.id) }))
-    .filter(u => !u.sched || u.sched.shift_type === "off" || u.sched.shift_type === "leave");
+  const staffOnShift = data?.today_duty_holders || [];
+  const dutyIds = new Set(staffOnShift.map((item: any) => item.user_id));
+  const staffOff = staffList.filter(u => u.status === "active" && !dutyIds.has(u.id));
 
   // Quick action items
   const quickActions = [
@@ -140,6 +132,7 @@ export default function Dashboard() {
                   {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
                 </Text>
               </View>
+              <View style={styles.heroTools}><ThemeSwitch compact />
               <TouchableOpacity testID="dashboard-profile-btn" onPress={() => router.push("/(app)/profile")} style={styles.profileBtn}>
                 {user?.avatar_url ? (
                   <Image source={{ uri: user.avatar_url }} style={styles.profileImg} />
@@ -147,6 +140,7 @@ export default function Dashboard() {
                   <Text style={styles.profileInitial}>{(user?.full_name || "U").slice(0, 1).toUpperCase()}</Text>
                 )}
               </TouchableOpacity>
+              </View>
             </View>
 
             {/* Today's shift card inside hero */}
@@ -196,15 +190,15 @@ export default function Dashboard() {
           title={`On Shift Today (${staffOnShift.length})`}
           onSeeAll={() => router.push("/(app)/schedule")}
           data={staffOnShift}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.user_id}
           emptyText="No staff on shift today"
           renderItem={(item) => (
             <StaffTile
               name={item.full_name}
               avatarUrl={item.avatar_url}
-              shiftType={item.sched?.shift_type}
-              status="active"
-              role={roleLabel[item.role] || item.role}
+              shiftType={item.shift_type}
+              status={item.attendance_status || (item.is_present ? "present" : "scheduled")}
+              role={`${item.team ? `Team ${item.team}` : roleLabel[item.role] || item.role}${item.clock_in ? ` · ${item.clock_in}` : ""}`}
             />
           )}
         />
@@ -235,7 +229,7 @@ export default function Dashboard() {
               <StaffTile
                 name={item.full_name}
                 avatarUrl={item.avatar_url}
-                shiftType={item.sched?.shift_type || "off"}
+                shiftType="off"
                 role={roleLabel[item.role] || item.role}
               />
             )}
@@ -344,6 +338,7 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 16,
   },
+  heroTools: { flexDirection: "row", alignItems: "center", gap: 10 },
   heroTop: {
     flexDirection: "row",
     alignItems: "flex-start",

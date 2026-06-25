@@ -1,5 +1,6 @@
-import { View, Text, Image, StyleSheet } from "react-native";
+import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
 import { appTheme, shiftLabel, shiftColor } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 type Props = {
   name: string;
@@ -14,6 +15,7 @@ type Props = {
 
 export function StaffTile({ name, avatarUrl, shiftType, status, role, compact, onPress, children }: Props) {
   const sc = shiftColor(shiftType);
+  const { theme } = useThemeMode();
   const initial = (name || "?").slice(0, 1).toUpperCase();
   const statusColor =
     status === "present" || status === "active" ? "#34C759"
@@ -38,8 +40,8 @@ export function StaffTile({ name, avatarUrl, shiftType, status, role, compact, o
           <Text style={[styles.avatarText, compact && styles.avatarTextCompact]}>{initial}</Text>
         </View>
       )}
-      <Text style={styles.name} numberOfLines={1}>{name}</Text>
-      {role && <Text style={styles.role} numberOfLines={1}>{role}</Text>}
+      <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>{name}</Text>
+      {role && <Text style={[styles.role, { color: theme.muted }]} numberOfLines={1}>{role}</Text>}
       {shiftType && shiftType !== "off" && (
         <View style={[styles.shiftBadge, { borderColor: sc.c }]}>
           <View style={[styles.shiftDot, { backgroundColor: sc.c }]} />
@@ -62,14 +64,14 @@ export function StaffTile({ name, avatarUrl, shiftType, status, role, compact, o
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} style={[styles.tile, compact && styles.tileCompact]}>
+      <TouchableOpacity onPress={onPress} style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }, compact && styles.tileCompact]}>
         {Inner}
       </TouchableOpacity>
     );
   }
 
   return (
-    <View style={[styles.tile, compact && styles.tileCompact]}>
+    <View style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }, compact && styles.tileCompact]}>
       {Inner}
     </View>
   );

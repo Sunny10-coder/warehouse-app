@@ -21,9 +21,13 @@ const LEAVE_TYPES: { key: string; label: string; icon: any }[] = [
 ];
 
 export default function Leaves() {
-  const { user, refresh } = useAuth();
+  const { user, refresh, isAdmin } = useAuth();
   const { theme } = useThemeMode();
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [swaps, setSwaps] = useState<any[]>([]);
+  const [shortage, setShortage] = useState<any>(null);
+  const [swapCandidates, setSwapCandidates] = useState<any[]>([]);
+  const [selectedSwapUser, setSelectedSwapUser] = useState("");
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [type, setType] = useState("annual");
@@ -35,8 +39,12 @@ export default function Leaves() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get("/leaves");
-      setLeaves(r.data || []);
+      const [leaveResult, swapResult] = await Promise.all([
+        api.get("/leaves"),
+        api.get("/swaps"),
+      ]);
+      setLeaves(leaveResult.data || []);
+      setSwaps(swapResult.data || []);
     } catch (e) {
       console.warn(errMsg(e));
     } finally {
@@ -45,7 +53,7 @@ export default function Leaves() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); refresh(); }, [load, refresh]));
-  useRealtimeRefresh(load, ["leaves", "users"]);
+  useRealtimeRefresh(load, ["leaves", "users", "swaps"]);
 
   const submit = async () => {
     if (!startDate || !endDate || !reason) {
@@ -67,12 +75,74 @@ export default function Leaves() {
       await load();
       await refresh();
     } catch (e) {
-      setError(errMsg(e));
+      const detail = (e as any)?.response?.data?.detail;
+      if (detail?.error === "coverage_insufficient") {
+        const firstDate = detail.dates?.[0];
+        setShortage({ ...detail, start_date: startDate, end_date: endDate, reason });
+        setSwapCandidates(firstDate ? (detail.swap_candidates?.[firstDate] || []) : []);
+        setSelectedSwapUser("");
+        setShowModal(false);
+      } else {
+        setError(errMsg(e));
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
+
+  const submitEmergency = async () => {
+    if (!shortage) return;
+    setSubmitting(true);
+    try {
+      await api.post("/leaves", {
+        leave_type: "emergency",
+        start_date: shortage.start_date,
+        end_date: shortage.end_date,
+        reason: shortage.reason,
+      });
+      setShortage(null);
+      Alert.alert("Emergency request submitted", "The request was sent for admin approval.");
+      await load();
+    } catch (e) {
+      Alert.alert("Could not submit", errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitSwap = async () => {
+    if (!shortage || !selectedSwapUser) {
+      Alert.alert("Select employee", "Choose an available employee for the swap.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/swaps", {
+        swap_user_id: selectedSwapUser,
+        shift_date: shortage.dates[0],
+        reason: shortage.reason,
+      });
+      setShortage(null);
+      setSelectedSwapUser("");
+      Alert.alert("Swap requested", "The selected employee must approve before admin review.");
+      await load();
+    } catch (e) {
+      Alert.alert("Could not request swap", errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const actOnSwap = async (swap: any, action: "approve" | "reject") => {
+    try {
+      const endpoint = isAdmin ? `/swaps/${swap.id}/admin-action` : `/swaps/${swap.id}/employee-action`;
+      await api.post(endpoint, { action });
+      await load();
+    } catch (e) {
+      Alert.alert("Swap action failed", errMsg(e));
+    }
+  };
   const pendingLeaves = leaves.filter(l => l.status === "pending");
   const approvedLeaves = leaves.filter(l => l.status === "approved");
   const rejectedLeaves = leaves.filter(l => l.status === "rejected");
@@ -121,6 +191,35 @@ export default function Leaves() {
       >
         <View style={{ height: 20 }} />
 
+
+        <SectionRow
+          title="Swap Requests"
+          data={swaps}
+          keyExtractor={(item) => item.id}
+          emptyText="No swap requests"
+          renderItem={(item) => (
+            <View style={[styles.swapTile, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={styles.swapIcon}><Ionicons name="swap-horizontal" size={18} color="#C084FC" /></View>
+              <Text style={[styles.swapTitle, { color: theme.text }]}>{item.requester_name}</Text>
+              <Text style={[styles.swapMeta, { color: theme.muted }]}>{item.shift_date}</Text>
+              <Text style={styles.swapRoute}>{item.requester_original_shift.toUpperCase()} → {item.swap_user_original_shift.toUpperCase()}</Text>
+              <Text style={[styles.swapMeta, { color: theme.muted }]} numberOfLines={2}>With {item.swap_user_name}</Text>
+              <SwapStatus status={item.status} />
+              {item.status === "pending_employee_approval" && item.swap_user_id === user?.id && (
+                <View style={styles.swapActions}>
+                  <TouchableOpacity style={[styles.swapAction, { backgroundColor: colors.danger }]} onPress={() => actOnSwap(item, "reject")}><Text style={styles.swapActionText}>Reject</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.swapAction, { backgroundColor: colors.success }]} onPress={() => actOnSwap(item, "approve")}><Text style={styles.swapActionText}>Approve</Text></TouchableOpacity>
+                </View>
+              )}
+              {isAdmin && item.status === "pending_admin_approval" && (
+                <View style={styles.swapActions}>
+                  <TouchableOpacity style={[styles.swapAction, { backgroundColor: colors.danger }]} onPress={() => actOnSwap(item, "reject")}><Text style={styles.swapActionText}>Reject</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.swapAction, { backgroundColor: colors.success }]} onPress={() => actOnSwap(item, "approve")}><Text style={styles.swapActionText}>Execute</Text></TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+        />
         <SectionRow
           title="Pending Requests"
           data={pendingLeaves}
@@ -147,6 +246,41 @@ export default function Leaves() {
         )}
       </ScrollView>
 
+
+      <Modal visible={!!shortage} transparent animationType="slide" onRequestClose={() => setShortage(null)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Coverage issue</Text>
+                <Text style={[styles.shortageText, { color: theme.muted }]}>Your leave balance is valid, but approving these dates would reduce the assigned shift below minimum staffing. Continue as Emergency Leave or arrange a Swap Request.</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShortage(null)}><Ionicons name="close" size={22} color={theme.muted} /></TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.emergencyBtn} onPress={submitEmergency} disabled={submitting}>
+              <Ionicons name="warning" size={18} color="#fff" />
+              <Text style={styles.emergencyText}>SUBMIT EMERGENCY LEAVE</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalLabel}>AVAILABLE SWAP STAFF</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.candidateRow}>
+              {swapCandidates.map(candidate => {
+                const active = selectedSwapUser === candidate.user_id;
+                return (
+                  <TouchableOpacity key={candidate.user_id} onPress={() => setSelectedSwapUser(candidate.user_id)} style={[styles.candidateCard, { borderColor: active ? "#C084FC" : theme.border, backgroundColor: active ? "rgba(192,132,252,0.16)" : theme.surfaceHi }]}>
+                    <View style={styles.candidateAvatar}><Text style={styles.candidateInitial}>{candidate.user_name.slice(0, 1)}</Text></View>
+                    <Text style={[styles.candidateName, { color: theme.text }]} numberOfLines={1}>{candidate.user_name}</Text>
+                    <Text style={styles.candidateShift}>{candidate.current_shift.toUpperCase()}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={[styles.swapSubmitBtn, !selectedSwapUser && { opacity: 0.45 }]} onPress={submitSwap} disabled={!selectedSwapUser || submitting}>
+              <Ionicons name="swap-horizontal" size={18} color="#fff" />
+              <Text style={styles.emergencyText}>SEND SWAP REQUEST</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
         <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.85)" }]}>
           <View style={[styles.modalBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -231,6 +365,18 @@ export default function Leaves() {
   );
 }
 
+
+function SwapStatus({ status }: { status: string }) {
+  const label: Record<string, string> = {
+    pending_employee_approval: "EMPLOYEE APPROVAL",
+    pending_admin_approval: "ADMIN APPROVAL",
+    executed: "EXECUTED",
+    rejected: "REJECTED",
+    cancelled: "CANCELLED",
+  };
+  const color = status === "executed" ? colors.success : status === "rejected" || status === "cancelled" ? colors.danger : colors.warning;
+  return <Text style={[styles.swapStatus, { color, borderColor: color }]}>{label[status] || status.toUpperCase()}</Text>;
+}
 function BalancePill({ label, value, color }: any) {
   const { theme } = useThemeMode();
   return (
@@ -256,6 +402,25 @@ function StatusBadge({ status }: any) {
 }
 
 const styles = StyleSheet.create({
+  swapTile: { width: 220, borderWidth: 1, borderRadius: 14, padding: 14, gap: 5 },
+  swapIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(192,132,252,0.14)", alignItems: "center", justifyContent: "center" },
+  swapTitle: { fontSize: 14, fontWeight: "900" },
+  swapMeta: { fontSize: 11 },
+  swapRoute: { color: "#C084FC", fontSize: 12, fontWeight: "900" },
+  swapStatus: { alignSelf: "flex-start", borderWidth: 1, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 4, fontSize: 8, fontWeight: "900", marginTop: 4 },
+  swapActions: { flexDirection: "row", gap: 7, marginTop: 7 },
+  swapAction: { flex: 1, minHeight: 34, borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  swapActionText: { color: "#fff", fontSize: 10, fontWeight: "900" },
+  shortageText: { fontSize: 12, lineHeight: 18, marginTop: 5 },
+  emergencyBtn: { minHeight: 48, borderRadius: 10, backgroundColor: colors.emergency, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  emergencyText: { color: "#fff", fontSize: 11, fontWeight: "900", letterSpacing: 0.7 },
+  candidateRow: { gap: 9, paddingVertical: 4, paddingRight: 20 },
+  candidateCard: { width: 118, borderWidth: 1, borderRadius: 12, padding: 10, alignItems: "center", gap: 5 },
+  candidateAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#C084FC", alignItems: "center", justifyContent: "center" },
+  candidateInitial: { color: "#fff", fontSize: 16, fontWeight: "900" },
+  candidateName: { fontSize: 11, fontWeight: "800", maxWidth: 98 },
+  candidateShift: { color: "#C084FC", fontSize: 9, fontWeight: "900" },
+  swapSubmitBtn: { minHeight: 48, borderRadius: 10, backgroundColor: "#7C3AED", flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 14 },
   container: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", padding: 20, paddingBottom: 12 },
   overline: { color: colors.textMuted, fontSize: 10, letterSpacing: 2.5, fontWeight: "700" },

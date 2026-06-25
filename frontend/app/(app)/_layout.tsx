@@ -1,6 +1,6 @@
 import { Tabs, Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, useWindowDimensions } from "react-native";
 import { useAuth } from "@/src/auth";
 import { colors } from "@/src/theme";
 import { useThemeMode } from "@/src/theme-context";
@@ -8,6 +8,8 @@ import { useThemeMode } from "@/src/theme-context";
 export default function AppLayout() {
   const { user, loading, isAdmin } = useAuth();
   const { theme } = useThemeMode();
+  const { width } = useWindowDimensions();
+  const desktop = width >= 980;
 
   if (loading) {
     return (
@@ -27,16 +29,27 @@ export default function AppLayout() {
           headerShown: false,
           tabBarActiveTintColor: theme.primary,
           tabBarInactiveTintColor: theme.muted,
-          tabBarStyle: {
+          tabBarPosition: desktop ? "left" : "bottom",
+          tabBarVariant: desktop ? "material" : "uikit",
+          tabBarStyle: desktop ? {
             backgroundColor: theme.surface,
-            borderTopColor: theme.primary,
-            borderTopWidth: 2,
-            height: 72,
+            borderRightColor: theme.border,
+            borderRightWidth: 1,
+            width: 104,
+            paddingHorizontal: 8,
+            paddingTop: 18,
+            elevation: 0,
+          } : {
+            backgroundColor: theme.surface,
+            borderTopColor: theme.border,
+            borderTopWidth: 1,
+            height: 74,
             paddingBottom: 10,
             paddingTop: 8,
             elevation: 0,
           },
-          tabBarLabelStyle: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+          tabBarItemStyle: desktop ? { minHeight: 64, borderRadius: 10, marginVertical: 3 } : undefined,
+          tabBarLabelStyle: { fontSize: desktop ? 9 : 10, fontWeight: "800", letterSpacing: 0.7 },
         }}
       >
         <Tabs.Screen

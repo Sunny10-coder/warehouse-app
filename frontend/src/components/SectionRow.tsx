@@ -1,5 +1,6 @@
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from "react-native";
 import { appTheme } from "@/src/theme";
+import { useThemeMode } from "@/src/theme-context";
 
 type Props = {
   title: string;
@@ -11,10 +12,11 @@ type Props = {
 };
 
 export function SectionRow({ title, onSeeAll, data, renderItem, keyExtractor, emptyText }: Props) {
+  const { theme } = useThemeMode();
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
         {onSeeAll && (
           <TouchableOpacity onPress={onSeeAll}>
             <Text style={styles.seeAll}>See All ›</Text>
@@ -23,7 +25,7 @@ export function SectionRow({ title, onSeeAll, data, renderItem, keyExtractor, em
       </View>
       {data.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>{emptyText || "Nothing here"}</Text>
+          <Text style={[styles.emptyText, { color: theme.muted }]}>{emptyText || "Nothing here"}</Text>
         </View>
       ) : (
         <FlatList

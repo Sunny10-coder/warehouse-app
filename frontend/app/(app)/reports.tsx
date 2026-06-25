@@ -220,65 +220,21 @@ export default function Reports() {
       Alert.alert("Invalid date", "Use YYYY-MM-DD for start and end date.");
       return;
     }
+    if (typeof window === "undefined") {
+      Alert.alert("Web export only", "Open Reports in a browser to download the Excel workbook.");
+      return;
+    }
     setExporting(true);
     try {
-      const r = await api.get("/reports/export", { params: { start_date: exportStart, end_date: exportEnd } });
-      const data = r.data;
-      const days = datesBetween(exportStart, exportEnd);
-      const scheduleByUserDate = new Map<string, any>();
-      const attendanceByUserDate = new Map<string, any>();
-      data.schedules.forEach((s: any) => scheduleByUserDate.set(`${s.user_id}|${s.shift_date}`, s));
-      data.attendance.forEach((a: any) => attendanceByUserDate.set(`${a.user_id}|${a.attendance_date}`, a));
-
-      const calendarRows = data.users.map((u: any) => [
-        u.user_name,
-        u.team || "",
-        u.role,
-        ...days.map(d => {
-          const s = scheduleByUserDate.get(`${u.user_id}|${d}`);
-          const a = attendanceByUserDate.get(`${u.user_id}|${d}`);
-          const shift = s ? (shiftLabel[s.shift_type] || s.shift_type) : "";
-          const status = a ? a.status : "";
-          const time = a && (a.clock_in || a.clock_out) ? ` ${a.clock_in || "--"}-${a.clock_out || "--"}` : "";
-          return [shift, status, time].filter(Boolean).join(" | ");
-        }),
-      ]);
-
-      const summaryRows = data.users.map((u: any) => [
-        u.user_name, u.email, u.role, u.team || "", u.location,
-        u.attendance_records, u.present, u.late, u.absent, u.half_day, u.total_hours,
-        u.annual_leave, u.sick_leave, u.vacation_leave, u.comp_off_leave, u.emergency_leave, u.pending_leave,
-        u.annual_balance, u.sick_balance, u.comp_off_balance,
-      ]);
-      const attendanceRows = data.attendance.map((a: any) => [
-        a.attendance_date, a.user_name, a.status, a.clock_in || "", a.clock_out || "", a.hours_worked, a.shift_type || "", a.notes || "",
-      ]);
-      const leaveRows = data.leaves.map((lv: any) => [
-        lv.user_name, lv.leave_type, lv.status, lv.start_date, lv.end_date, lv.days, lv.reason || "", lv.approved_by || "",
-      ]);
-
-      const html = `
-        <html><head><meta charset="utf-8" /></head><body>
-          <h1>Warehouse Attendance Report ${esc(exportStart)} to ${esc(exportEnd)}</h1>
-          ${table("Calendar", ["Employee", "Team", "Role", ...days], calendarRows)}
-          ${table("Employee Summary", [
-            "Employee", "Email", "Role", "Team", "Location", "Attendance Records", "Present", "Late", "Absent", "Half Day", "Total Hours",
-            "Annual Leave", "Sick Leave", "Vacation", "Comp Off Leave", "Emergency Leave", "Pending Leave",
-            "Annual Balance", "Sick Balance", "Comp Off Balance",
-          ], summaryRows)}
-          ${table("Attendance Log", ["Date", "Employee", "Status", "Clock In", "Clock Out", "Hours", "Shift", "Notes"], attendanceRows)}
-          ${table("Leaves", ["Employee", "Type", "Status", "Start", "End", "Days", "Reason", "Approved By"], leaveRows)}
-        </body></html>
-      `;
-      if (typeof window === "undefined") {
-        Alert.alert("Web export only", "Open this reports page in browser to download Excel.");
-        return;
-      }
-      const blob = new Blob([html], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8" });
+      const response = await api.get("/reports/export.xlsx", {
+        params: { start_date: exportStart, end_date: exportEnd },
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `warehouse-attendance-${exportStart}-to-${exportEnd}.xlsx`;
+      link.download = `warehouse-management-${exportStart}-to-${exportEnd}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -289,7 +245,6 @@ export default function Reports() {
       setExporting(false);
     }
   };
-
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
@@ -370,7 +325,7 @@ export default function Reports() {
             {exporting ? <ActivityIndicator color={colors.bg} /> : (
               <>
                 <Ionicons name="download" size={16} color={colors.bg} />
-                <Text style={styles.exportBtnText}>DOWNLOAD EXCEL REPORT</Text>
+                <Text style={styles.exportBtnText}>DOWNLOAD MANAGEMENT WORKBOOK</Text>
               </>
             )}
           </TouchableOpacity>

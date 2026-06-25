@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { getBackendBaseUrl, getToken } from "@/src/api";
 
-type Topic = "users" | "schedules" | "attendance" | "leaves" | "dashboard" | "reports" | "all";
+type Topic = "users" | "schedules" | "attendance" | "leaves" | "swaps" | "dashboard" | "reports" | "all";
 
 type RealtimeMessage = {
   topic?: Topic;
