@@ -194,7 +194,7 @@ export default function Dashboard() {
           emptyText="No staff on shift today"
           renderItem={(item) => (
             <StaffTile
-              name={item.full_name}
+              name={item.user_name || item.full_name || "Employee"}
               avatarUrl={item.avatar_url}
               shiftType={item.shift_type}
               status={item.attendance_status || (item.is_present ? "present" : "scheduled")}
@@ -227,7 +227,7 @@ export default function Dashboard() {
             keyExtractor={(item) => item.id}
             renderItem={(item) => (
               <StaffTile
-                name={item.full_name}
+                name={item.user_name || item.full_name || "Employee"}
                 avatarUrl={item.avatar_url}
                 shiftType="off"
                 role={roleLabel[item.role] || item.role}

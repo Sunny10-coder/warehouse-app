@@ -1467,6 +1467,12 @@ async def create_swap_request(
         raise HTTPException(status_code=400, detail="Off or leave duties cannot be swapped")
     if requester_schedule["shift_type"] == target_schedule["shift_type"]:
         raise HTTPException(status_code=400, detail="Select an employee from another shift")
+    coverage = await _check_coverage(db, [payload.shift_date], user["_id"])
+    if coverage.get(payload.shift_date, {}).get("ok", True):
+        raise HTTPException(
+            status_code=400,
+            detail="Swap is available only when an otherwise valid leave request would reduce minimum shift coverage",
+        )
     conflict = await db.swap_requests.find_one({
         "shift_date": payload.shift_date,
         "$or": [
@@ -1803,16 +1809,25 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
         item["user_id"]: item
         for item in await db.attendance.find({"attendance_date": today}, {"_id": 0}).to_list(1000)
     }
+    duty_user_ids = list({schedule["user_id"] for schedule in today_schedules})
+    duty_users = {
+        item["_id"]: item
+        for item in await db.users.find(
+            {"_id": {"$in": duty_user_ids}},
+            {"_id": 1, "full_name": 1, "avatar_url": 1, "team": 1, "role": 1},
+        ).to_list(1000)
+    } if duty_user_ids else {}
     today_duty_holders = []
     for schedule in today_schedules:
+        duty_user = duty_users.get(schedule["user_id"], {})
         attendance_item = today_attendance_by_user.get(schedule["user_id"])
         is_present = bool(attendance_item and attendance_item.get("status") in ("present", "late", "half_day"))
         today_duty_holders.append({
             "user_id": schedule["user_id"],
-            "user_name": schedule.get("user_name", ""),
-            "avatar_url": schedule.get("avatar_url"),
-            "team": schedule.get("team"),
-            "role": schedule.get("role"),
+            "user_name": duty_user.get("full_name") or schedule.get("user_name", ""),
+            "avatar_url": duty_user.get("avatar_url") or schedule.get("avatar_url"),
+            "team": duty_user.get("team") or schedule.get("team"),
+            "role": duty_user.get("role") or schedule.get("role"),
             "shift_type": schedule.get("shift_type"),
             "start_time": schedule.get("start_time", ""),
             "end_time": schedule.get("end_time", ""),

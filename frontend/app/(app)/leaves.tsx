@@ -185,6 +185,21 @@ export default function Leaves() {
         <BalancePill label="Comp Off" value={user?.comp_off_balance ?? 0} color={colors.compOff} />
       </View>
 
+      <TouchableOpacity
+        testID="leaves-swap-entry"
+        style={[styles.swapEntry, { backgroundColor: theme.surface, borderColor: "#7C3AED" }]}
+        onPress={() => setShowModal(true)}
+      >
+        <View style={styles.swapEntryIcon}>
+          <Ionicons name="swap-horizontal" size={22} color="#C084FC" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.swapEntryTitle, { color: theme.text }]}>Duty Swap Request</Text>
+          <Text style={[styles.swapEntryText, { color: theme.muted }]}>Choose your normal leave type and dates. If minimum shift coverage is affected, available swap staff will appear automatically.</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#C084FC" />
+      </TouchableOpacity>
+
       <ScrollView
         contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.morning} />}
@@ -402,6 +417,10 @@ function StatusBadge({ status }: any) {
 }
 
 const styles = StyleSheet.create({
+  swapEntry: { marginHorizontal: 20, marginTop: 14, borderWidth: 1, borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  swapEntryIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "rgba(192,132,252,0.14)", alignItems: "center", justifyContent: "center" },
+  swapEntryTitle: { fontSize: 14, fontWeight: "900", marginBottom: 3 },
+  swapEntryText: { fontSize: 10, lineHeight: 15 },
   swapTile: { width: 220, borderWidth: 1, borderRadius: 14, padding: 14, gap: 5 },
   swapIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(192,132,252,0.14)", alignItems: "center", justifyContent: "center" },
   swapTitle: { fontSize: 14, fontWeight: "900" },
