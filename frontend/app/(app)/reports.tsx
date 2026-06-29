@@ -626,7 +626,7 @@ export default function Reports() {
 
               <Text style={styles.modalLabel}>Status</Text>
               <View style={styles.statusSelectRow}>
-                {["present", "late", "absent", "leave"].map(s => {
+                {["present", "late", "absent", "leave", "sick"].map(s => {
                   const active = editStatus === s;
                   return (
                     <TouchableOpacity
@@ -641,6 +641,11 @@ export default function Reports() {
                   );
                 })}
               </View>
+              {editStatus === "sick" && (
+                <Text style={{ color: colors.sick, fontSize: 11, fontWeight: "700", marginBottom: 10 }}>
+                  Saving Sick creates an approved one-day sick record and deducts 1 day from the employee's sick balance.
+                </Text>
+              )}
 
               <Text style={styles.modalLabel}>Clock In (HH:MM - 24h)</Text>
               <TextInput

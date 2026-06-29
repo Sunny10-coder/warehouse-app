@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
+import * as Notifications from "expo-notifications";
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image,
-  FlatList, useWindowDimensions,
+  FlatList, useWindowDimensions, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, router } from "expo-router";
@@ -15,6 +16,14 @@ import { SectionRow } from "@/src/components/SectionRow";
 import { StaffTile } from "@/src/components/StaffTile";
 import { ThemeSwitch } from "@/src/components/ThemeSwitch";
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 type DashboardData = {
   today_schedule: any;
   today_signed_in: number;
@@ -22,8 +31,10 @@ type DashboardData = {
   today_comp_off: number;
   today_on_leave: number;
   today_duty_holders: any[];
+  leave_request_reminders: { attendance_date: string; attendance_status: string; suggested_leave_type: string; message: string }[];
   hours_this_month: number;
   present_days_this_month: number;
+  has_punched_in_today: boolean;
   pending_leaves: number;
   annual_leave_balance: number;
   sick_leave_balance: number;
@@ -50,6 +61,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<any[]>([]);
+  const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [adminLeavesDismissed, setAdminLeavesDismissed] = useState(false);
 
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -80,6 +93,59 @@ export default function Dashboard() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useRealtimeRefresh(load, ["users", "schedules", "attendance", "leaves"]);
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') return;
+
+      if (!data || !user) return;
+      await Notifications.cancelAllScheduledNotificationsAsync();
+      
+      const todaySched = data.today_schedule;
+      const hasPunched = data.has_punched_in_today;
+      
+      if (!hasPunched && todaySched && todaySched.shift_type) {
+        const shiftTimes: Record<string, string> = {
+          "morning": "07:00",
+          "afternoon": "12:00",
+          "night": "21:00",
+          "admin": "07:30",
+          "sat_day": "06:00",
+          "sat_night": "18:00",
+          "sun_day": "06:00",
+          "sun_night": "18:00",
+          "ega": "07:00",
+        };
+        const startTimeStr = shiftTimes[todaySched.shift_type];
+        if (startTimeStr) {
+          const [h, m] = startTimeStr.split(':').map(Number);
+          const now = new Date();
+          const scheduledTime = new Date();
+          scheduledTime.setHours(h, m, 0, 0);
+          
+          if (scheduledTime > now) {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'Attendance Reminder',
+                body: "It's time to punch in for your shift!",
+              },
+              trigger: scheduledTime,
+            });
+          } else {
+            // Already late! Fire immediately if it's the same day
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'Late Punch Alert',
+                body: "You are late! Please punch in immediately.",
+              },
+              trigger: null, // Fire immediately
+            });
+          }
+        }
+      }
+    })();
+  }, [data, user]);
 
   const todaySched = data?.today_schedule;
   const totalEmployees = data?.admin?.total_active_users ?? 1;
@@ -293,6 +359,44 @@ export default function Dashboard() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal visible={!reminderDismissed && !!data?.leave_request_reminders?.length} transparent animationType="fade" onRequestClose={() => setReminderDismissed(true)}>
+        <View style={styles.reminderBackdrop}>
+          <View style={[styles.reminderCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.reminderIcon}>
+              <Ionicons name="notifications" size={28} color="#FF9F0A" />
+            </View>
+            <Text style={[styles.reminderTitle, { color: theme.text }]}>Leave request required</Text>
+            <Text style={[styles.reminderText, { color: theme.muted }]}>{data?.leave_request_reminders?.[0]?.message}</Text>
+            <TouchableOpacity style={styles.reminderApply} onPress={() => { setReminderDismissed(true); router.push("/(app)/leaves"); }}>
+              <Ionicons name="document-text" size={17} color="#fff" />
+              <Text style={styles.reminderApplyText}>APPLY THROUGH THE APP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.reminderLater} onPress={() => setReminderDismissed(true)}>
+              <Text style={[styles.reminderLaterText, { color: theme.muted }]}>REMIND ME NEXT TIME</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!adminLeavesDismissed && isAdmin && pendingLeaves.length > 0} transparent animationType="fade" onRequestClose={() => setAdminLeavesDismissed(true)}>
+        <View style={styles.reminderBackdrop}>
+          <View style={[styles.reminderCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.reminderIcon}>
+              <Ionicons name="notifications-circle" size={32} color="#0A84FF" />
+            </View>
+            <Text style={[styles.reminderTitle, { color: theme.text }]}>Pending Leave Applications</Text>
+            <Text style={[styles.reminderText, { color: theme.muted }]}>There are {pendingLeaves.length} pending leave requests that require your approval.</Text>
+            <TouchableOpacity style={[styles.reminderApply, { backgroundColor: "#0A84FF" }]} onPress={() => { setAdminLeavesDismissed(true); router.push("/(app)/admin"); }}>
+              <Ionicons name="shield-checkmark" size={17} color="#fff" />
+              <Text style={styles.reminderApplyText}>REVIEW NOW</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.reminderLater} onPress={() => setAdminLeavesDismissed(true)}>
+              <Text style={[styles.reminderLaterText, { color: theme.muted }]}>REMIND ME LATER</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -523,5 +627,14 @@ const styles = StyleSheet.create({
     backgroundColor: appTheme.primary,
   },
 
+  reminderBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.82)", alignItems: "center", justifyContent: "center", padding: 20 },
+  reminderCard: { width: "100%", maxWidth: 430, borderWidth: 1, borderRadius: 18, padding: 22, alignItems: "center" },
+  reminderIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: "rgba(255,159,10,0.14)", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  reminderTitle: { fontSize: 19, fontWeight: "900", marginBottom: 8 },
+  reminderText: { fontSize: 13, lineHeight: 20, textAlign: "center" },
+  reminderApply: { width: "100%", minHeight: 48, marginTop: 18, borderRadius: 10, backgroundColor: appTheme.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  reminderApplyText: { color: "#fff", fontSize: 11, fontWeight: "900", letterSpacing: 0.7 },
+  reminderLater: { minHeight: 40, justifyContent: "center", marginTop: 4 },
+  reminderLaterText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   errorText: { color: appTheme.red, margin: 20, fontWeight: "800" },
 });

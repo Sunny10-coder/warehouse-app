@@ -88,3 +88,11 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+open-webui/.git/objects/pack/pack-2b946e53ca103bcd5f28c0489e3a3a5b15e8e439.pack
+rowboat/apps/x/apps/main/out/make/squirrel.windows/x64/Rowboat-win32-x64-0.1.0-full.nupkg
+rowboat/apps/x/apps/main/out/make/squirrel.windows/x64/Rowboat-win32-x64-0.1.0-setup.exe
+rowboat/apps/x/apps/main/out/make/zip/win32/x64/Rowboat-win32-x64-0.1.0.zip
+rowboat/apps/x/apps/main/out/Rowboat-win32-x64/rowboat.exe
+rowboat/apps/x/node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-win32-x64@0.3.156/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe
+rowboat/apps/x/node_modules/.pnpm/@openai+codex@0.128.0-win32-x64/node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/codex/codex.exe
+rowboat/apps/x/node_modules/.pnpm/electron@39.2.7/node_modules/electron/dist/electron.exe

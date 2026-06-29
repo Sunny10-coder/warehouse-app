@@ -1184,6 +1184,106 @@ def _compute_hours(clock_in: Optional[str], clock_out: Optional[str]) -> float:
         return 0
 
 
+async def _matching_leave_for_date(db, user_id: str, attendance_date: str, leave_type: Optional[str] = None) -> Optional[dict]:
+    query: dict[str, Any] = {
+        "user_id": user_id,
+        "start_date": {"$lte": attendance_date},
+        "end_date": {"$gte": attendance_date},
+        "status": {"$in": ["pending", "approved"]},
+    }
+    if leave_type:
+        query["leave_type"] = leave_type
+    return await db.leaves.find_one(query)
+
+
+async def _approve_manual_sick_day(db, target: dict, attendance_date: str, admin: dict, notes: Optional[str]) -> dict:
+    existing = await _matching_leave_for_date(db, target["_id"], attendance_date, "sick")
+    if existing and existing.get("status") == "approved":
+        return existing
+    if target.get("sick_leave_balance", 0) < 1:
+        raise HTTPException(status_code=400, detail="Insufficient sick leave balance")
+
+    now = datetime.now(timezone.utc)
+    if existing:
+        await db.leaves.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "status": "approved",
+                "approved_by": admin["_id"],
+                "approval_notes": notes or "Approved from manual attendance entry",
+                "updated_at": now,
+            }},
+        )
+        leave = await db.leaves.find_one({"id": existing["id"]})
+    else:
+        leave_model = LeaveRequest(
+            user_id=target["_id"],
+            user_name=target["full_name"],
+            leave_type="sick",
+            start_date=attendance_date,
+            end_date=attendance_date,
+            days=1,
+            reason=notes or "Sick day recorded from manual attendance",
+            status="approved",
+            approved_by=admin["_id"],
+            approval_notes="Approved from manual attendance entry",
+        )
+        leave = leave_model.dict()
+        await db.leaves.insert_one(leave)
+
+    await db.users.update_one({"_id": target["_id"]}, {"$inc": {"sick_leave_balance": -1}})
+    await _apply_approved_leave_to_schedule(db, leave)
+    await _audit_event(db, "leave", leave["id"], "manual_sick_approved", admin, {"date": attendance_date})
+    await realtime.broadcast("leaves", "approved", {"leave_id": leave["id"], "user_id": target["_id"]})
+    await realtime.broadcast("users", "leave_balance_updated", {"leave_id": leave["id"], "user_id": target["_id"]})
+    await realtime.broadcast("schedules", "leave_applied", {"leave_id": leave["id"], "user_id": target["_id"], "start_date": attendance_date, "end_date": attendance_date})
+    return leave
+
+
+async def _reconcile_previous_day_leave(db, user: dict) -> list[dict]:
+    previous_date = (local_now().date() - timedelta(days=1)).isoformat()
+    schedule = await db.schedules.find_one({
+        "user_id": user["_id"],
+        "shift_date": previous_date,
+        "shift_type": {"$nin": ["off", "leave"]},
+    })
+    attendance = await db.attendance.find_one({"user_id": user["_id"], "attendance_date": previous_date})
+    formal_leave = await _matching_leave_for_date(db, user["_id"], previous_date)
+
+    if schedule and not attendance and not formal_leave:
+        record = AttendanceMark(
+            user_id=user["_id"],
+            user_name=user["full_name"],
+            attendance_date=previous_date,
+            status="leave",
+            hours_worked=0,
+            shift_type=schedule.get("shift_type"),
+            notes="Auto-marked because attendance was not recorded. Formal leave request required.",
+            marked_by="system",
+        )
+        await db.attendance.update_one(
+            {"user_id": user["_id"], "attendance_date": previous_date},
+            {"$set": record.dict()},
+            upsert=True,
+        )
+        attendance = record.dict()
+        await realtime.broadcast("attendance", "auto_leave", {"user_id": user["_id"], "date": previous_date})
+
+    if not attendance or attendance.get("status") not in ("leave", "sick", "comp_off"):
+        return []
+
+    expected_type = {"sick": "sick", "comp_off": "comp_off"}.get(attendance.get("status"))
+    matching_leave = await _matching_leave_for_date(db, user["_id"], previous_date, expected_type)
+    if matching_leave:
+        return []
+    return [{
+        "attendance_date": previous_date,
+        "attendance_status": attendance.get("status", "leave"),
+        "suggested_leave_type": expected_type or "annual",
+        "message": f"Attendance for {previous_date} is marked as {attendance.get('status', 'leave').replace('_', ' ')}. Submit the formal leave request through the app.",
+    }]
+
+
 @app.post("/api/attendance", response_model=AttendanceMark)
 async def mark_attendance(
     payload: AttendanceCreate, user: dict = Depends(get_current_user), db=Depends(get_db)
@@ -1197,6 +1297,11 @@ async def mark_attendance(
 
     sched = await db.schedules.find_one({"user_id": target_id, "shift_date": payload.attendance_date})
     existing = await db.attendance.find_one({"user_id": target_id, "attendance_date": payload.attendance_date}) or {}
+
+    if payload.status not in ("present", "late", "absent", "half_day", "leave", "sick", "comp_off"):
+        raise HTTPException(status_code=400, detail="Invalid attendance status")
+    if payload.status == "sick" and user["role"] in ADMIN_ROLES:
+        await _approve_manual_sick_day(db, target, payload.attendance_date, user, payload.notes)
 
     # Partial merge so clock-in and clock-out can be submitted independently
     clock_in = payload.clock_in if payload.clock_in is not None else existing.get("clock_in")
@@ -1780,6 +1885,7 @@ async def act_on_leave(
 # ---------------------------------------------------------------------------
 @app.get("/api/dashboard")
 async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
+    leave_request_reminders = await _reconcile_previous_day_leave(db, user)
     today = local_today_str()
     today_schedule = await db.schedules.find_one({"user_id": user["_id"], "shift_date": today}, {"_id": 0})
     today_attendance_docs = await db.attendance.find(
@@ -1843,6 +1949,8 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
     ).to_list(50)
     hours_this_month = sum(a.get("hours_worked", 0) for a in att_docs)
     present_days = sum(1 for a in att_docs if a["status"] == "present")
+    today_user_attendance = next((a for a in att_docs if a.get("attendance_date") == today), None)
+    has_punched_in_today = bool(today_user_attendance)
     pending_leaves = await db.leaves.count_documents({"user_id": user["_id"], "status": "pending"})
 
     summary = {
@@ -1852,12 +1960,14 @@ async def dashboard(user: dict = Depends(get_current_user), db=Depends(get_db)):
         "today_comp_off": today_comp_off,
         "today_on_leave": today_on_leave,
         "today_duty_holders": today_duty_holders,
+        "leave_request_reminders": leave_request_reminders,
         "hours_this_month": round(hours_this_month, 2),
         "present_days_this_month": present_days,
         "pending_leaves": pending_leaves,
         "annual_leave_balance": user.get("annual_leave_balance", 0),
         "sick_leave_balance": user.get("sick_leave_balance", 0),
         "comp_off_balance": user.get("comp_off_balance", 0),
+        "has_punched_in_today": has_punched_in_today,
     }
 
     if user["role"] in ADMIN_ROLES:

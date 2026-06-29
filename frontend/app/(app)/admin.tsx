@@ -696,6 +696,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
   const [email, setEmail] = useState(user?.email || "");
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState(user?.role || "employee");
   const [shift, setShift] = useState(user?.default_shift || "morning");
   const [team, setTeam] = useState(user?.team || "");
   const [location, setLocation] = useState(user?.location || "warehouse");
@@ -720,6 +721,7 @@ function UserEditModal({ user, onClose, onSaved }: any) {
     setEmail(user.email || "");
     setAvatarUrl(user.avatar_url || "");
     setPassword("");
+    setRole(user.role || "employee");
     setShift(user.default_shift || "morning");
     setTeam(user.team || "");
     setLocation(user.location || "warehouse");
@@ -749,12 +751,13 @@ function UserEditModal({ user, onClose, onSaved }: any) {
         full_name: fullName,
         email: email.trim(),
         avatar_url: avatarUrl.trim() || null,
+        role: role,
         default_shift: shift,
-        team: team || null,
+        team: role === "document_controller" ? null : team,
         location,
-        annual_leave_balance: parseFloat(annual) || 0,
-        sick_leave_balance: parseFloat(sick) || 0,
-        comp_off_balance: parseFloat(compOff) || 0,
+        annual_leave_balance: Number(annual) || 0,
+        sick_leave_balance: Number(sick) || 0,
+        comp_off_balance: Number(compOff) || 0,
       };
       if (password.trim()) {
         if (password.trim().length < 6) {
@@ -919,6 +922,25 @@ function UserEditModal({ user, onClose, onSaved }: any) {
             placeholderTextColor={colors.textMuted}
             secureTextEntry
           />
+
+          <Text style={styles.modalLabel}>Role</Text>
+          <View style={styles.optGrid}>
+            {[
+              ["employee", "Employee"],
+              ["manager", "Manager"],
+              ["asst_manager", "Assistant"],
+              ["document_controller", "Doc Controller"],
+            ].map(([value, label]) => (
+              <TouchableOpacity
+                key={value}
+                testID={`edit-role-${value}`}
+                onPress={() => setRole(value)}
+                style={[styles.optChip, role === value && styles.optChipActive]}
+              >
+                <Text style={[styles.optChipText, role === value && { color: colors.bg }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           <Text style={styles.modalLabel}>Default Shift</Text>
           <View style={styles.optGrid}>
